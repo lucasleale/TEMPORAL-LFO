@@ -2,6 +2,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
+#include <ArduinoTapTempo.h>
 #include <Bounce2.h>
 #include <Lfo.h>
 #include <ResponsiveAnalogRead.h>
@@ -23,6 +24,7 @@
 #define POT2_PIN 28
 #define BTN1_PIN 14
 #define BTN2_PIN 15
+#define TAP_PIN 12
 #define ENC_PINA 3
 #define ENC_PINB 2
 #define LFO1_PIN 20
@@ -41,13 +43,14 @@ Lfo lfo(LFO1_PIN, LFO2_PIN, SAMPLE_RATE, TABLE_SIZE);
 Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 ResponsiveAnalogRead potMult1(POT1_PIN, true);
 ResponsiveAnalogRead potMult2(POT2_PIN, true);
-
+ArduinoTapTempo tap;
+Bounce wave1 = Bounce();
+Bounce wave2 = Bounce();
+Bounce tapBounce = Bounce();
 const float multipliers[] = {0.25, 0.5, 1., 1.5, 2., 3., 4.};
 const uint8_t numMultipliers = (sizeof(multipliers) / sizeof(byte*));
 const char* multipliersOled[numMultipliers] = {"1/16", "1,8", "1/4", "1/2", "1"};
 const uint8_t numWaves = 7;
-Bounce wave1 = Bounce();
-Bounce wave2 = Bounce();
 
 int multiplier1;
 int multiplier2;
@@ -57,6 +60,7 @@ volatile byte seqStore;
 float bpm = 120.;
 float periodMs = 500;
 volatile float bpmTest = 500;
+bool tapState;
 //// TIMER INTERRUPT PARA LFO ////
 
 static void alarm_in_us_arm(uint32_t delay_us) {
@@ -105,6 +109,10 @@ void displayBpm(float bpm) {
 float bpmToMs(float bpm) {
   const float msQuarter = 60000.;
   return (float)msQuarter / (float)bpm;
+}
+float msToBpm(float period) {
+  const float msQuarter = 60000.;
+  return (float)msQuarter / (float)period;
 }
 void updateEncoderBpm() {
   static int encoderValue = 1;
@@ -162,7 +170,6 @@ void updateButtons() {
     if (waveSelector1 == numWaves) {
       waveSelector1 = 0;
     }
-    
   }
 
   if (wave2.rose()) {
@@ -172,7 +179,23 @@ void updateButtons() {
     if (waveSelector2 == numWaves) {
       waveSelector2 = 0;
     }
-    
+  }
+}
+
+void tapTempo() {
+  tapBounce.update();
+  tapState = tapBounce.read();
+  tap.update(tapState);
+
+  if (tapBounce.fell()) {
+    periodMs = tap.getBeatLength();
+    Serial.println(tap.getBeatLength());
+    lfo.resetPhase(0);
+    lfo.resetPhase(1);
+    lfo.setPeriodMs(0, periodMs);
+    lfo.setPeriodMs(1, periodMs);
+    bpm = msToBpm(periodMs);
+    displayBpm(bpm);
   }
 }
 void setup() {
@@ -184,10 +207,13 @@ void setup() {
   pinMode(ENC_PINB, INPUT_PULLUP);
   pinMode(LFO1_PIN, OUTPUT);
   pinMode(LFO2_PIN, OUTPUT);
+  pinMode(TAP_PIN, INPUT_PULLUP);
   wave1.attach(BTN1_PIN, INPUT_PULLUP);
   wave2.attach(BTN2_PIN, INPUT_PULLUP);
   wave1.interval(25);
   wave2.interval(25);
+  tapBounce.attach(TAP_PIN, INPUT_PULLUP);
+  tapBounce.interval(25);
   if (!oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println(F("SSD1306 allocation failed"));
     for (;;)
@@ -245,4 +271,5 @@ void loop() {
   updatePots();
   updateButtons();
   updateEncoderBpm();
+  tapTempo();
 }
