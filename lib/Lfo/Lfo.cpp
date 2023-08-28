@@ -44,8 +44,8 @@ void Lfo::update() {
         _randomFlag[lfoN] = false;
         _output[lfoN] = (_phaseAcc12b[lfoN] < (_tableSize / 2)) ? _tableSize - 1 : 0;  // square
         break;
-      case 5: 
-        _randomFlag[lfoN] = true; //el random se ejecuta en el hardsync/reset
+      case 5:
+        _randomFlag[lfoN] = true;  // el random se ejecuta en el hardsync/reset
         break;
       case 6:
         _randomFlag[lfoN] = false;
@@ -56,17 +56,20 @@ void Lfo::update() {
 
     ////////cuando pasa el tamanio de la tabla vuelve a 0, aca se calculan varias cosas por tema de hard sync
     if (_phaseAcc[lfoN] > _tableSizeFixedPoint) {
-      if (abs(_phaseAcc12b[0] - _phaseAcc12b[1]) <= 16) {  // 1-lfoN invierte indice porque actua sobre el otro lfo
-                                                           // hard sync
-        _phaseAcc[1 - lfoN] += _tableSizeFixedPoint;       // en vez de resetear a 0 le sumamos para que supere _tablesizefix.
-                                                           // esto soluciona un error con el random
+      if (abs(_phaseAcc12b[0] - _phaseAcc12b[1]) <= 128) { //este 128 hay que reemplazarlo por un valor que sea un ratio
+      //entre ratio1 y ratio2. Mientras mas grande es la diferencia mas grande es el valor. x4 y 0.25 en 128 queda bien.
+        // 1-lfoN invierte indice porque actua sobre el otro lfo
+
+        _phaseAcc[1 - lfoN] += _tableSizeFixedPoint;  // hard sync
+        // en vez de resetear a 0 le sumamos para que supere _tablesizefix.
+        // esto soluciona un error con el random
       }
 
       if (_lastRatio[1 - lfoN] != _ratio[1 - lfoN]) {  // if (phaseIncChange) {
         _phaseAcc[1 - lfoN] = 0;
         _lastRatio[1 - lfoN] = _ratio[1 - lfoN];
       }
-      if(_randomFlag[lfoN]){ //random refresca valor en el momento del hardsync. Si no, nunca sucede por el fix de la wavetable.
+      if (_randomFlag[lfoN]) {  // random refresca valor en el momento del hardsync. Si no, nunca sucede por el fix de la wavetable.
         _output[lfoN] = random(0, 4096);
         analogWrite(_lfoPins[lfoN], _output[lfoN]);
       }

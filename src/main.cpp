@@ -31,6 +31,7 @@
 #define MIN_BPM 40
 #define LFO1 0
 #define LFO2 1
+
 const uint32_t SAMPLE_RATE = 4000;
 const uint32_t TABLE_SIZE = 4096;
 const uint32_t PWM_RANGE = 4095;
@@ -44,6 +45,7 @@ ResponsiveAnalogRead potMult2(POT2_PIN, true);
 const float multipliers[] = {0.25, 0.5, 1., 1.5, 2., 3., 4.};
 const uint8_t numMultipliers = (sizeof(multipliers) / sizeof(byte*));
 const char* multipliersOled[numMultipliers] = {"1/16", "1,8", "1/4", "1/2", "1"};
+const uint8_t numWaves = 7;
 Bounce wave1 = Bounce();
 Bounce wave2 = Bounce();
 
@@ -149,18 +151,29 @@ void updatePots() {
     lfo.setRatio(1, multipliers[multiplier2]);
   }
 }
-void updateButtons(){
-wave1.update();
-wave2.update();
+void updateButtons() {
+  wave1.update();
+  wave2.update();
+  static uint8_t waveSelector1;
+  static uint8_t waveSelector2;
+  if (wave1.rose()) {
+    lfo.setWave(0, waveSelector1);
+    waveSelector1++;
+    if (waveSelector1 == numWaves) {
+      waveSelector1 = 0;
+    }
+    
+  }
 
-if(wave1.rose()){
+  if (wave2.rose()) {
+    lfo.setWave(1, waveSelector2);
+    waveSelector2++;
 
-}
-
-if(wave2.rose()){
-
-}
-
+    if (waveSelector2 == numWaves) {
+      waveSelector2 = 0;
+    }
+    
+  }
 }
 void setup() {
   Serial.begin(9600);
@@ -183,8 +196,8 @@ void setup() {
   lfo.setPeriodMs(0, 1000);
   lfo.setPeriodMs(1, 1000);
 
-  lfo.setWave(0, 5);
-  lfo.setWave(1, 5);
+  lfo.setWave(0, 3);
+  lfo.setWave(1, 3);
   lfo.setRatio(0, 4);
   lfo.setRatio(1, 1);
   lfo.resetPhase(0);
