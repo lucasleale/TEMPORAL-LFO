@@ -10,6 +10,8 @@ Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
   pinMode(lfoPin2, OUTPUT);
   _lfoPin1 = lfoPin1;
   _lfoPin2 = lfoPin2;
+  _lfoPins[0] = _lfoPin1;
+  _lfoPins[1] = _lfoPin2;
   _tableSize = tableSize;
   _tableSizeFixedPoint = (_tableSize << _bitShift);
   _ticksCycle = (float)((float)_tableSizeFixedPoint / float(sampleRate));
@@ -18,12 +20,43 @@ Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
 void Lfo::update() {
   for (int lfoN = 0; lfoN < 2; lfoN++) {
     /////incrementar acumulador segun freq (phaseInc) y ratio
-    _phaseAcc[lfoN] += _phaseInc[lfoN]; //* _ratio[lfoN];
+    _phaseAcc[lfoN] += _phaseInc[lfoN];  //* _ratio[lfoN];
     _phaseAcc12b[lfoN] = _phaseAcc[lfoN] >> 17;
+
+    switch (_waveSelector[lfoN]) {  ////////////calculo formas de onda
+      case 0:
+        _randomFlag[lfoN] = false;
+        _output[lfoN] = SIN[_phaseAcc12b[lfoN]];  // sin
+        break;
+      case 1:
+        _randomFlag[lfoN] = false;
+        _output[lfoN] = _phaseAcc12b[lfoN];  // saw
+        break;
+      case 2:
+        _randomFlag[lfoN] = false;
+        _output[lfoN] = (_tableSize - 1) - _phaseAcc12b[lfoN];  // inv saw
+        break;
+      case 3:
+        _randomFlag[lfoN] = false;
+        _output[lfoN] = TRI[_phaseAcc12b[lfoN]];  // triangle
+        break;
+      case 4:
+        _randomFlag[lfoN] = false;
+        _output[lfoN] = (_phaseAcc12b[lfoN] < (_tableSize / 2)) ? _tableSize - 1 : 0;  // square
+        break;
+      case 5: 
+        _randomFlag[lfoN] = true; //el random se ejecuta en el hardsync/reset
+        break;
+      case 6:
+        _randomFlag[lfoN] = false;
+        _output[lfoN] = 4095;  // hold
+        break;
+    }
+    ///////////////////
 
     ////////cuando pasa el tamanio de la tabla vuelve a 0, aca se calculan varias cosas por tema de hard sync
     if (_phaseAcc[lfoN] > _tableSizeFixedPoint) {
-      if (abs(_phaseAcc12b[0] - _phaseAcc12b[1]) <= 16) {  // 1-lfoN invierte indice porque actua
+      if (abs(_phaseAcc12b[0] - _phaseAcc12b[1]) <= 16) {  // 1-lfoN invierte indice porque actua sobre el otro lfo
                                                            // hard sync
         _phaseAcc[1 - lfoN] += _tableSizeFixedPoint;       // en vez de resetear a 0 le sumamos para que supere _tablesizefix.
                                                            // esto soluciona un error con el random
@@ -33,33 +66,17 @@ void Lfo::update() {
         _phaseAcc[1 - lfoN] = 0;
         _lastRatio[1 - lfoN] = _ratio[1 - lfoN];
       }
-
+      if(_randomFlag[lfoN]){ //random refresca valor en el momento del hardsync. Si no, nunca sucede por el fix de la wavetable.
+        _output[lfoN] = random(0, 4096);
+        analogWrite(_lfoPins[lfoN], _output[lfoN]);
+      }
       _phaseAcc[lfoN] = 0;
+    } else {  // refrescar el lfo siempre menos en el momento del hardsync ya que glitchea en la tabla de ondas
+      analogWrite(_lfoPins[lfoN], _output[lfoN]);
     }
-    //////calcular formas de onda aca
-    switch (_waveSelector[lfoN]) {
-      case 0:
-        _output[lfoN] = _phaseAcc12b[lfoN];  // aca iria SINE, ahora es saw
-        break;
-      case 1:
-        _output[lfoN] = (_tableSize - 1) - _phaseAcc12b[lfoN];  // inv saw
-        break;
-      case 2:
-        _output[lfoN] = TRI[_phaseAcc12b[lfoN]];
-        break;
-      case 3:
-        _output[lfoN] = (_phaseAcc12b[lfoN] < (_tableSize / 2)) ? _tableSize - 1 : 0;
-        break;
-      case 4:
-        if (_phaseAcc[lfoN] == 0) {  // para random usar phaseAcc, no phaseAcc12b.
-          _output[lfoN] = random(0, 4096);
-        }
-        break;
-    }
-    ///////////////////
   }
-  analogWrite(_lfoPin1, _output[0]);
-  analogWrite(_lfoPin2, _output[1]);
+  // analogWrite(_lfoPin1, _output[0]);
+  // analogWrite(_lfoPin2, _output[1]);
 }
 
 void Lfo::setFreqHz(uint8_t lfoNum, float freq) {

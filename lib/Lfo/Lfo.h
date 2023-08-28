@@ -30,6 +30,8 @@ class Lfo {
     volatile uint32_t _phaseInc[2];
     volatile uint32_t _phaseAcc[2];
     volatile uint16_t _phaseAcc12b[2];
+    volatile uint16_t _lfoPins[2];
+    volatile bool _randomFlag[2];
     volatile float _ratio[2] = {1, 1};
     volatile float _lastRatio[2] = {1, 1};
     volatile float _period;
