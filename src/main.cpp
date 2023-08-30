@@ -1,5 +1,5 @@
-#include <Adafruit_I2CDevice.h>
 #include <Adafruit_GFX.h>
+#include <Adafruit_I2CDevice.h>
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 #include <ArduinoTapTempo.h>
@@ -33,7 +33,7 @@
 #define MIN_BPM 40
 #define LFO1 0
 #define LFO2 1
-#define ROW1_WAVE 64 //coordenada Y para el dibujo de formas de onda
+#define ROW1_WAVE 64  // coordenadas Y para el dibujo de formas de onda
 #define ROW2_WAVE 88
 
 const uint8_t NUM_WAVES = 7;
@@ -65,9 +65,9 @@ const uint8_t sawDownOled[oledX] = {8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4,
 const uint8_t triOled[oledX] = {8, 6, 4, 2, 0, 2, 4, 6, 8, 10, 12, 14, 16, 14, 12, 10};
 const uint8_t sqrOled[oledX] = {15, 0, 0, 0, 0, 0, 0, 0, 0, 15, 15, 15, 15, 15, 15, 15};
 const uint8_t randomOled[] = {8, 8, 8, 8, 10, 10, 10, 10,
-                                       4, 4, 4, 4, 12, 12, 12, 12,
-                                       9, 9, 9, 9, 15, 15, 15, 15,
-                                       2, 2, 2, 2, 7, 7, 7, 7};
+                              4, 4, 4, 4, 12, 12, 12, 12,
+                              9, 9, 9, 9, 15, 15, 15, 15,
+                              2, 2, 2, 2, 7, 7, 7, 7};
 
 const uint8_t* wavetablesOled[] = {sineOled,
                                    sawUpOled,
@@ -82,7 +82,6 @@ volatile int encoderValueISR;
 
 float bpm = 120.;
 float periodMs = 500;
-volatile float bpmTest = 500;
 bool tapState;
 
 //// TIMER INTERRUPT PARA LFO ////
@@ -95,7 +94,7 @@ static void alarm_irq(void) {
   hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
   alarm_in_us_arm(ALARM_PERIOD);
 
-  lfo.update(); //codigo lfo
+  lfo.update();  // codigo lfo
 }
 
 static void alarm_in_us(uint32_t delay_us) {
@@ -107,8 +106,7 @@ static void alarm_in_us(uint32_t delay_us) {
 //// FIN TIMER INTERRUPT PARA LFO ////
 
 void encoderInterrupt() {
-  // static byte encoderPinA = digitalRead(ENC_PINA);
-  // static byte encoderPinB = digitalRead(ENC_PINB);
+
   static uint8_t seqStore;
   static uint8_t pinPair;
   pinPair = (digitalRead(ENC_PINB) << 1) | digitalRead(ENC_PINA);
@@ -158,7 +156,7 @@ void updateEncoderBpm() {
     lfo.setPeriodMs(0, periodMs);
     lfo.setPeriodMs(1, periodMs);
     displayBpm(bpm);
-    tap.setBPM(bpm); //para que el tap no salte a cualquier valor, que se vaya ajustando 
+    tap.setBPM(bpm);  // para que el tap no salte a cualquier valor, que se vaya ajustando
   }
 }
 void updatePots() {
@@ -236,7 +234,7 @@ void tapTempo() {
 
   if (tapBounce.fell()) {
     periodMs = tap.getBeatLength();
-    
+
     lfo.resetPhase(0);
     lfo.resetPhase(1);
     lfo.setPeriodMs(0, periodMs);
