@@ -5,7 +5,7 @@
 #include "pico/stdlib.h"
 
 Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
-         uint32_t tableSize) {
+         uint32_t tableSize, uint16_t range) {
   pinMode(lfoPin1, OUTPUT);
   pinMode(lfoPin2, OUTPUT);
   _lfoPin1 = lfoPin1;
@@ -13,15 +13,21 @@ Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
   _lfoPins[0] = _lfoPin1;
   _lfoPins[1] = _lfoPin2;
   _tableSize = tableSize;
-  _tableSizeFixedPoint = (_tableSize << _bitShift);
+  _tableSizeFixedPoint = (_tableSize << 17);
   _ticksCycle = (float)((float)_tableSizeFixedPoint / float(sampleRate));
+  
+  _rangeOutput = 12 - (log((range+1)) / log(2));//esto hay que mejorar despues, el 12 son 12 bit. Tengo que ajustar 
+  //los acumuladores y tabla de ondas para que sean de 16bit (65536) y ahi hacer esta comparacion para descartar
+  //bits al final
+
+  
 }
 
 void Lfo::update() {
   for (int lfoN = 0; lfoN < 2; lfoN++) {
     /////incrementar acumulador segun freq (phaseInc) y ratio
     _phaseAcc[lfoN] += _phaseInc[lfoN];  //* _ratio[lfoN];
-    _phaseAcc12b[lfoN] = _phaseAcc[lfoN] >> 17;
+    _phaseAcc12b[lfoN] = _phaseAcc[lfoN] >> 17; // >> 17 acorde a table size
 
     switch (_waveSelector[lfoN]) {  ////////////calculo formas de onda
       case 0:
@@ -71,11 +77,11 @@ void Lfo::update() {
       }
       if (_randomFlag[lfoN]) {  // random refresca valor en el momento del hardsync. Si no, nunca sucede por el fix de la wavetable.
         _output[lfoN] = random(0, 4096);
-        analogWrite(_lfoPins[lfoN], _output[lfoN]);
+        analogWrite(_lfoPins[lfoN], _output[lfoN] >> _rangeOutput);
       }
       _phaseAcc[lfoN] = 0;
     } else {  // refrescar el lfo siempre menos en el momento del hardsync ya que glitchea en la tabla de ondas
-      analogWrite(_lfoPins[lfoN], _output[lfoN]);
+      analogWrite(_lfoPins[lfoN], _output[lfoN] >> _rangeOutput);
     }
   }
   // analogWrite(_lfoPin1, _output[0]);

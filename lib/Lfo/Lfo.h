@@ -10,7 +10,7 @@
 
 class Lfo {
      public:
-     Lfo(volatile uint8_t lfoPin1, volatile uint8_t lfoPin2, uint32_t sampleRate, uint32_t tableSize);
+     Lfo(volatile uint8_t lfoPin1, volatile uint8_t lfoPin2, uint32_t sampleRate, uint32_t tableSize, uint16_t range);
      void setFreqHz(uint8_t lfoNum, float freq);
      void update();
      void setPeriodMs(uint8_t lfoNum, float period);
@@ -35,7 +35,9 @@ class Lfo {
     volatile float _ratio[2] = {1, 1};
     volatile float _lastRatio[2] = {1, 1};
     volatile float _period;
-    const static int _bitShift = 17;
+    volatile int _bitshift;
+    volatile uint16_t _range;
+    volatile uint16_t _rangeOutput;
     void computeWaveforms();
     
 };
