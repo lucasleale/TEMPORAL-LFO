@@ -95,28 +95,32 @@ volatile uint32_t pulseTicksLfo2;
 volatile float pulsePeriodMsLfo2;
 volatile uint32_t pulseCounter;
 volatile bool gotNewPulse;
+bool lastGotNewPulse;
 volatile bool pulseConnected = false;
-volatile bool newTrigger = true; //para que el reset en el sync externo no corra riesgo de doble trigger.
+volatile bool newTrigger = true;  // para que el reset en el sync externo no corra riesgo de doble trigger.
 int multiplier1;
 int multiplier2;
 volatile float ratioLfo1 = 1.;
 volatile float ratioLfo2 = 1.;
+volatile uint8_t multiplierSyncLfo1 = 1;
+volatile uint8_t multiplierSyncLfo2 = 1;
 volatile int encoderValueISR;
 
 float bpm = 120.;
 float periodMs = 500;
 bool tapState;
 
-
 void syncPulse() {
   pulseConnected = true;
   lfo.enableSync();
+  // if(ratioLfo1 == 1){
+  //   digitalWrite(SYNC1_OUT_PIN, HIGH); //thru
+  //   counterDivTicksLfo1 = 0;
+
+  //}
   if (pulseCounter % 2 == 0) {  // always
     counterTicksLfo1 = 0;
 
-    if (ratioLfo1 <= 1.) {
-      // counterDivTicksLfo1 = 0;
-    }
   } else if (pulseCounter % 2 == 1) {  // always
     // pulsePeriod = counter * 0.5; //creo que lo calculamos fuera del timer, aca y en ratio
 
@@ -125,18 +129,14 @@ void syncPulse() {
     lfo.setPeriodMs(0, pulsePeriodMsLfo1);
     lfo.setPeriodMs(1, pulsePeriodMsLfo1);
     gotNewPulse = true;
-    // counterTicksLfo1 = 0;
-    if (ratioLfo1 <= 1.) {
-      // counterDivTicksLfo1 = 0;
-    }
   }
-  // if (ratio > 1.) {
-  if (pulseCounter % int((ratioLfo1 * 4)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
-    counterTicksLfo1 = 0;
-    // digitalWrite(17, HIGH);
+
+  if (pulseCounter % int(ceil(ratioLfo1 * multiplierSyncLfo1)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
+    // counterTicksLfo1 = 0;
+    //  digitalWrite(17, HIGH);
     counterDivTicksLfo1 = 0;
   }
-  //}
+
   pulseCounter++;
 }
 //// TIMER INTERRUPT PARA LFO Y TICK COUNTER PULSE////
@@ -158,7 +158,7 @@ static void alarm_irq(void) {
         digitalWrite(SYNC1_OUT_PIN, HIGH);
         lfo.resetPhase(0);
         lfo.resetPhase(1);
-        newTrigger = false; 
+        newTrigger = false;
       }
     } else if (counterDivTicksLfo1 % pulseTicksLfo1 == TRIGGER_DUTY) {
       digitalWrite(SYNC1_OUT_PIN, LOW);
@@ -210,6 +210,17 @@ float msToBpm(float period) {
   const float msQuarter = 60000.;
   return (float)msQuarter / (float)period;
 }
+
+void updateBpm() {
+  if (!pulseConnected) {
+    periodMs = bpmToMs(bpm);
+    lfo.setPeriodMs(0, periodMs);
+    lfo.setPeriodMs(1, periodMs);
+  }
+    displayBpm(bpm);
+    tap.setBPM(bpm);  // para que el tap no salte a cualquier valor, que se vaya ajustando
+  
+}
 void updateEncoderBpm() {
   static int encoderValue = 1;
   static int lastEncoderValue = 1;
@@ -223,12 +234,7 @@ void updateEncoderBpm() {
     } else if (bpm <= MIN_BPM) {
       bpm = MIN_BPM;
     }
-
-    periodMs = bpmToMs(bpm);
-    lfo.setPeriodMs(0, periodMs);
-    lfo.setPeriodMs(1, periodMs);
-    displayBpm(bpm);
-    tap.setBPM(bpm);  // para que el tap no salte a cualquier valor, que se vaya ajustando
+    updateBpm();
   }
 }
 void updatePots() {
@@ -244,6 +250,7 @@ void updatePots() {
     oled.setTextSize(1);
     oled.setCursor(36, 68);
     ratioLfo1 = multipliers[multiplier1];
+    multiplierSyncLfo1 = multipliersSync[multiplier1];
     oled.print(multipliersOled[multiplier1]);
     oled.display();
     lfo.setRatio(0, ratioLfo1);
@@ -253,6 +260,7 @@ void updatePots() {
     oled.setTextSize(1);
     oled.setCursor(36, 92);
     ratioLfo2 = multipliers[multiplier2];
+    multiplierSyncLfo2 = multipliersSync[multiplier2];
     oled.print(multipliersOled[multiplier2]);
     oled.display();
     lfo.setRatio(1, ratioLfo2);
@@ -302,19 +310,21 @@ void updateButtons() {
 }
 
 void tapTempo() {
-  tapBounce.update();
-  tapState = tapBounce.read();
-  tap.update(tapState);
+  if (!pulseConnected) {
+    tapBounce.update();
+    tapState = tapBounce.read();
+    tap.update(tapState);
 
-  if (tapBounce.fell()) {
-    periodMs = tap.getBeatLength();
+    if (tapBounce.fell()) {
+      periodMs = tap.getBeatLength();
 
-    lfo.resetPhase(0);
-    lfo.resetPhase(1);
-    lfo.setPeriodMs(0, periodMs);
-    lfo.setPeriodMs(1, periodMs);
-    bpm = msToBpm(periodMs);
-    displayBpm(bpm);
+      lfo.resetPhase(0);
+      lfo.resetPhase(1);
+      lfo.setPeriodMs(0, periodMs);
+      lfo.setPeriodMs(1, periodMs);
+      bpm = msToBpm(periodMs);
+      displayBpm(bpm);
+    }
   }
 }
 
@@ -385,10 +395,13 @@ void loop() {
       Serial.println("disconnected");
       pulseConnected = false;
       lfo.disableSync();
+      updateBpm();
     }
     // displayBpm(msToBpm(pulsePeriodMsLfo1));
+    gotNewPulse = false;
   }
-  gotNewPulse = false;
-
-  
+  if(lastGotNewPulse != gotNewPulse){
+    updateBpm();
+    lastGotNewPulse = gotNewPulse;
+  }
 }
