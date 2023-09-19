@@ -8,6 +8,12 @@
 #include <ResponsiveAnalogRead.h>
 #include <Wire.h>
 
+#include <Fonts/Font4x7Fixed.h>
+#include <Fonts/Font4x5Fixed.h>
+#include <Fonts/Font5x5Fixed.h>
+#include <Fonts/Font5x7FixedMono.h>
+#include <Fonts/Font5x7Fixed.h>
+#include <Fonts/FreeSans9pt7b.h>
 #include "pico/stdlib.h"
 #include "settings.h"
 
@@ -29,15 +35,15 @@
 #define ENC_PINB 2
 #define LFO1_PIN 20
 #define LFO2_PIN 21
+#define SYNC1_OUT_PIN 17
+#define SYNC2_OUT_PIN 18
 #define MAX_BPM 340
 #define MIN_BPM 40
-#define LFO1 0
-#define LFO2 1
 #define ROW1_WAVE 64  // coordenadas Y para el dibujo de formas de onda
 #define ROW2_WAVE 88
 
 const uint8_t NUM_WAVES = 7;
-const uint32_t SAMPLE_RATE = 4000;                  // dejar fijo en 4khz
+const uint32_t SAMPLE_RATE = 10000;                  // dejar fijo en 10khz o 4khz?
 const uint32_t TABLE_SIZE = 4096;                   // largo de tabla de ondas, tal vez lo incremente mas
 const uint32_t PWM_RANGE = 4095;                    // (2^n )- 1 //4095 para 12bit, 1023 para 10bit
 const uint32_t PWM_FREQ = F_CPU / (PWM_RANGE + 1);  // 61035Hz en 12bit, 244,140Hz en 10bit
@@ -76,6 +82,12 @@ const uint8_t* wavetablesOled[] = {sineOled,
                                    sqrOled,
                                    randomOled};
 
+volatile uint32_t counterTicks;
+volatile uint32_t counterDivTicks;
+volatile uint32_t pulseTicks;
+volatile uint32_t pulseCounter;
+volatile float pulsePeriodMs;
+
 int multiplier1;
 int multiplier2;
 volatile int encoderValueISR;
@@ -84,7 +96,7 @@ float bpm = 120.;
 float periodMs = 500;
 bool tapState;
 
-//// TIMER INTERRUPT PARA LFO ////
+//// TIMER INTERRUPT PARA LFO Y TICK COUNTER////
 static void alarm_in_us_arm(uint32_t delay_us) {
   uint64_t target = timer_hw->timerawl + delay_us;
   timer_hw->alarm[ALARM_NUM] = (uint32_t)target;
@@ -95,6 +107,8 @@ static void alarm_irq(void) {
   alarm_in_us_arm(ALARM_PERIOD);
 
   lfo.update();  // codigo lfo
+  
+
 }
 
 static void alarm_in_us(uint32_t delay_us) {
@@ -272,6 +286,7 @@ void setup() {
   alarm_in_us(ALARM_PERIOD);
   attachInterrupt(digitalPinToInterrupt(ENC_PINA), encoderInterrupt, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENC_PINB), encoderInterrupt, CHANGE);
+  //oled.setFont(&FreeSans9pt7b);
   oled.display();
   oled.clearDisplay();
   oled.setRotation(1);
