@@ -17,14 +17,16 @@ class Lfo {
      void setRatio(uint8_t lfoNum, float ratio);
      void resetPhase(uint8_t lfoNum);
      void setWave(uint8_t lfoNum, byte wave);
-
+     void enableSync(); //si recibe o no sync externo
+     void disableSync();
+     //void syncEnabled(uint8_t lfoNum);
      private :
     volatile uint8_t _lfoPin1;
     volatile uint8_t _lfoPin2;
     uint32_t _ticksCycle;
     uint32_t _tableSizeFixedPoint;
     uint32_t _tableSize;
-   
+   volatile bool _syncEnabled = false;
     volatile uint32_t _output[2];
     volatile uint8_t _waveSelector[2];
     volatile uint32_t _phaseInc[2];

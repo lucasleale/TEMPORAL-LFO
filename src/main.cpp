@@ -4,16 +4,16 @@
 #include <Arduino.h>
 #include <ArduinoTapTempo.h>
 #include <Bounce2.h>
+#include <Fonts/Font4x5Fixed.h>
+#include <Fonts/Font4x7Fixed.h>
+#include <Fonts/Font5x5Fixed.h>
+#include <Fonts/Font5x7Fixed.h>
+#include <Fonts/Font5x7FixedMono.h>
+#include <Fonts/FreeSans9pt7b.h>
 #include <Lfo.h>
 #include <ResponsiveAnalogRead.h>
 #include <Wire.h>
 
-#include <Fonts/Font4x7Fixed.h>
-#include <Fonts/Font4x5Fixed.h>
-#include <Fonts/Font5x5Fixed.h>
-#include <Fonts/Font5x7FixedMono.h>
-#include <Fonts/Font5x7Fixed.h>
-#include <Fonts/FreeSans9pt7b.h>
 #include "pico/stdlib.h"
 #include "settings.h"
 
@@ -37,13 +37,15 @@
 #define LFO2_PIN 21
 #define SYNC1_OUT_PIN 17
 #define SYNC2_OUT_PIN 18
+#define SYNC_IN_PIN 26
 #define MAX_BPM 340
 #define MIN_BPM 40
 #define ROW1_WAVE 64  // coordenadas Y para el dibujo de formas de onda
 #define ROW2_WAVE 88
-
+#define TRIGGER_DUTY 200  // 200 * 10khz = 10mS
 const uint8_t NUM_WAVES = 7;
-const uint32_t SAMPLE_RATE = 10000;                  // dejar fijo en 10khz o 4khz?
+const uint32_t SAMPLE_RATE = 10000;  // dejar fijo en 10khz o 4khz?
+const float SAMPLE_RATE_MS = 1000. / SAMPLE_RATE;
 const uint32_t TABLE_SIZE = 4096;                   // largo de tabla de ondas, tal vez lo incremente mas
 const uint32_t PWM_RANGE = 4095;                    // (2^n )- 1 //4095 para 12bit, 1023 para 10bit
 const uint32_t PWM_FREQ = F_CPU / (PWM_RANGE + 1);  // 61035Hz en 12bit, 244,140Hz en 10bit
@@ -60,6 +62,7 @@ Bounce tapBounce = Bounce();
 
 const float multipliers[] = {0.25, 0.5, 0.66666, 1., 1.5, 2., 3., 4.};
 const uint8_t numMultipliers = (sizeof(multipliers) / sizeof(byte*));
+const uint8_t multipliersSync[numMultipliers] = {4, 2, 6, 1, 2, 1, 1, 1};
 const char* multipliersOled[numMultipliers] = {"1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   "};
 
 const uint8_t oledX = 16;
@@ -82,21 +85,62 @@ const uint8_t* wavetablesOled[] = {sineOled,
                                    sqrOled,
                                    randomOled};
 
-volatile uint32_t counterTicks;
-volatile uint32_t counterDivTicks;
-volatile uint32_t pulseTicks;
+volatile uint32_t counterTicksLfo1;
+volatile uint32_t counterDivTicksLfo1;
+volatile uint32_t pulseTicksLfo1;
+volatile float pulsePeriodMsLfo1;
+volatile uint32_t counterTicksLfo2;
+volatile uint32_t counterDivTicksLfo2;
+volatile uint32_t pulseTicksLfo2;
+volatile float pulsePeriodMsLfo2;
 volatile uint32_t pulseCounter;
-volatile float pulsePeriodMs;
-
+volatile bool gotNewPulse;
+volatile bool pulseConnected = false;
+volatile bool newTrigger = true; //para que el reset en el sync externo no corra riesgo de doble trigger.
 int multiplier1;
 int multiplier2;
+volatile float ratioLfo1 = 1.;
+volatile float ratioLfo2 = 1.;
 volatile int encoderValueISR;
 
 float bpm = 120.;
 float periodMs = 500;
 bool tapState;
 
-//// TIMER INTERRUPT PARA LFO Y TICK COUNTER////
+
+void syncPulse() {
+  pulseConnected = true;
+  lfo.enableSync();
+  if (pulseCounter % 2 == 0) {  // always
+    counterTicksLfo1 = 0;
+
+    if (ratioLfo1 <= 1.) {
+      // counterDivTicksLfo1 = 0;
+    }
+  } else if (pulseCounter % 2 == 1) {  // always
+    // pulsePeriod = counter * 0.5; //creo que lo calculamos fuera del timer, aca y en ratio
+
+    pulseTicksLfo1 = counterTicksLfo1 * ratioLfo1;
+    pulsePeriodMsLfo1 = counterTicksLfo1 * SAMPLE_RATE_MS;
+    lfo.setPeriodMs(0, pulsePeriodMsLfo1);
+    lfo.setPeriodMs(1, pulsePeriodMsLfo1);
+    gotNewPulse = true;
+    // counterTicksLfo1 = 0;
+    if (ratioLfo1 <= 1.) {
+      // counterDivTicksLfo1 = 0;
+    }
+  }
+  // if (ratio > 1.) {
+  if (pulseCounter % int((ratioLfo1 * 4)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
+    counterTicksLfo1 = 0;
+    // digitalWrite(17, HIGH);
+    counterDivTicksLfo1 = 0;
+  }
+  //}
+  pulseCounter++;
+}
+//// TIMER INTERRUPT PARA LFO Y TICK COUNTER PULSE////
+
 static void alarm_in_us_arm(uint32_t delay_us) {
   uint64_t target = timer_hw->timerawl + delay_us;
   timer_hw->alarm[ALARM_NUM] = (uint32_t)target;
@@ -107,8 +151,23 @@ static void alarm_irq(void) {
   alarm_in_us_arm(ALARM_PERIOD);
 
   lfo.update();  // codigo lfo
-  
 
+  if (pulseConnected) {
+    if (counterDivTicksLfo1 % pulseTicksLfo1 == 0) {
+      if (newTrigger) {
+        digitalWrite(SYNC1_OUT_PIN, HIGH);
+        lfo.resetPhase(0);
+        lfo.resetPhase(1);
+        newTrigger = false; 
+      }
+    } else if (counterDivTicksLfo1 % pulseTicksLfo1 == TRIGGER_DUTY) {
+      digitalWrite(SYNC1_OUT_PIN, LOW);
+      newTrigger = true;
+    }
+
+    counterTicksLfo1++;
+    counterDivTicksLfo1++;
+  }
 }
 
 static void alarm_in_us(uint32_t delay_us) {
@@ -120,7 +179,6 @@ static void alarm_in_us(uint32_t delay_us) {
 //// FIN TIMER INTERRUPT PARA LFO ////
 
 void encoderInterrupt() {
-
   static uint8_t seqStore;
   static uint8_t pinPair;
   pinPair = (digitalRead(ENC_PINB) << 1) | digitalRead(ENC_PINA);
@@ -185,17 +243,19 @@ void updatePots() {
     lastMultiplier1 = multiplier1;
     oled.setTextSize(1);
     oled.setCursor(36, 68);
+    ratioLfo1 = multipliers[multiplier1];
     oled.print(multipliersOled[multiplier1]);
     oled.display();
-    lfo.setRatio(0, multipliers[multiplier1]);
+    lfo.setRatio(0, ratioLfo1);
   }
   if (multiplier2 != lastMultiplier2) {
     lastMultiplier2 = multiplier2;
     oled.setTextSize(1);
     oled.setCursor(36, 92);
+    ratioLfo2 = multipliers[multiplier2];
     oled.print(multipliersOled[multiplier2]);
     oled.display();
-    lfo.setRatio(1, multipliers[multiplier2]);
+    lfo.setRatio(1, ratioLfo2);
   }
 }
 void displayWave(byte wave, byte row) {
@@ -268,6 +328,9 @@ void setup() {
   pinMode(LFO1_PIN, OUTPUT);
   pinMode(LFO2_PIN, OUTPUT);
   pinMode(TAP_PIN, INPUT_PULLUP);
+  pinMode(SYNC1_OUT_PIN, OUTPUT);
+  pinMode(SYNC2_OUT_PIN, OUTPUT);
+  pinMode(SYNC_IN_PIN, INPUT_PULLUP);
   wave1.attach(BTN1_PIN, INPUT_PULLUP);
   wave2.attach(BTN2_PIN, INPUT_PULLUP);
   wave1.interval(25);
@@ -286,7 +349,8 @@ void setup() {
   alarm_in_us(ALARM_PERIOD);
   attachInterrupt(digitalPinToInterrupt(ENC_PINA), encoderInterrupt, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENC_PINB), encoderInterrupt, CHANGE);
-  //oled.setFont(&FreeSans9pt7b);
+  attachInterrupt(digitalPinToInterrupt(SYNC_IN_PIN), syncPulse, RISING);
+  // oled.setFont(&FreeSans9pt7b);
   oled.display();
   oled.clearDisplay();
   oled.setRotation(1);
@@ -305,10 +369,26 @@ void setup() {
   lfo.resetPhase(0);
   lfo.resetPhase(1);
 }
-
+unsigned long count;
 void loop() {
   updatePots();
   updateButtons();
   updateEncoderBpm();
   tapTempo();
+  if (gotNewPulse) {
+    // Serial.print(ratioLfo1);
+    // Serial.print("  ");
+    // Serial.print(counterTicksLfo1);
+    // Serial.print("  ");
+    // Serial.println(counterTicksLfo1 * SAMPLE_RATE_MS);
+    if (counterTicksLfo1 < 400) {  //
+      Serial.println("disconnected");
+      pulseConnected = false;
+      lfo.disableSync();
+    }
+    // displayBpm(msToBpm(pulsePeriodMsLfo1));
+  }
+  gotNewPulse = false;
+
+  
 }
