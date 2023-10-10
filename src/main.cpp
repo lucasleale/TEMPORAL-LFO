@@ -42,7 +42,12 @@
 #define MIN_BPM 40
 #define ROW1_WAVE 64  // coordenadas Y para el dibujo de formas de onda
 #define ROW2_WAVE 88
-#define TRIGGER_DUTY 200  // 200 * 10khz = 10mS
+#define TRIGGER_DUTY 200  // 200 * 10khz = 20mS
+#define POS 1
+#define INV 0
+const uint16_t TRIGGER_PERIOD = 200; // 200 ticks a 10khz * 0.1ms = 20ms
+
+
 const uint8_t NUM_WAVES = 7;
 const uint32_t SAMPLE_RATE = 10000;  // dejar fijo en 10khz o 4khz?
 const float SAMPLE_RATE_MS = 1000. / SAMPLE_RATE;
@@ -51,7 +56,7 @@ const uint32_t PWM_RANGE = 4095;                    // (2^n )- 1 //4095 para 12b
 const uint32_t PWM_FREQ = F_CPU / (PWM_RANGE + 1);  // 61035Hz en 12bit, 244,140Hz en 10bit
 const float ALARM_PERIOD = 1000000. / SAMPLE_RATE;  // timer interrupt en microsegundos
 
-Lfo lfo(LFO1_PIN, LFO2_PIN, SAMPLE_RATE, TABLE_SIZE, PWM_RANGE);
+Lfo lfo(LFO1_PIN, LFO2_PIN, SAMPLE_RATE, TABLE_SIZE, PWM_RANGE, SYNC1_OUT_PIN, SYNC2_OUT_PIN);
 Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 ResponsiveAnalogRead potMult1(POT1_PIN, true);
 ResponsiveAnalogRead potMult2(POT2_PIN, true);
@@ -85,11 +90,11 @@ const uint8_t* wavetablesOled[] = {sineOled,
                                    sqrOled,
                                    randomOled};
 
-volatile uint32_t counterTicksLfo1;
+volatile uint32_t counterTicksPulse;
 volatile uint32_t counterDivTicksLfo1;
 volatile uint32_t pulseTicksLfo1;
 volatile float pulsePeriodMsLfo1;
-volatile uint32_t counterTicksLfo2;
+//volatile uint32_t counterTicksLfo2;
 volatile uint32_t counterDivTicksLfo2;
 volatile uint32_t pulseTicksLfo2;
 volatile float pulsePeriodMsLfo2;
@@ -97,7 +102,11 @@ volatile uint32_t pulseCounter;
 volatile bool gotNewPulse;
 bool lastGotNewPulse;
 volatile bool pulseConnected = false;
-volatile bool newTrigger = true;  // para que el reset en el sync externo no corra riesgo de doble trigger.
+bool lastPulseConnected;
+volatile bool newTriggerLfo1 = true;  // para que el reset en el sync externo no corra riesgo de doble trigger.
+volatile bool newTriggerLfo2 = true;  // para que el reset en el sync externo no corra riesgo de doble trigger.
+volatile uint32_t timeOut = 30000;
+volatile uint32_t counterTimeOut;
 int multiplier1;
 int multiplier2;
 volatile float ratioLfo1 = 1.;
@@ -105,13 +114,15 @@ volatile float ratioLfo2 = 1.;
 volatile uint8_t multiplierSyncLfo1 = 1;
 volatile uint8_t multiplierSyncLfo2 = 1;
 volatile int encoderValueISR;
-
+bool polarityLfo1 = 0;
+bool polarityLfo2 = 0;
 float bpm = 120.;
 float periodMs = 500;
 bool tapState;
 
 void syncPulse() {
   pulseConnected = true;
+  counterTimeOut = 0;  // este es el watchdog, resetea a 0 en todos los pulsos
   lfo.enableSync();
   // if(ratioLfo1 == 1){
   //   digitalWrite(SYNC1_OUT_PIN, HIGH); //thru
@@ -119,22 +130,32 @@ void syncPulse() {
 
   //}
   if (pulseCounter % 2 == 0) {  // always
-    counterTicksLfo1 = 0;
+    counterTicksPulse = 0;
 
   } else if (pulseCounter % 2 == 1) {  // always
     // pulsePeriod = counter * 0.5; //creo que lo calculamos fuera del timer, aca y en ratio
 
-    pulseTicksLfo1 = counterTicksLfo1 * ratioLfo1;
-    pulsePeriodMsLfo1 = counterTicksLfo1 * SAMPLE_RATE_MS;
-    lfo.setPeriodMs(0, pulsePeriodMsLfo1);
-    lfo.setPeriodMs(1, pulsePeriodMsLfo1);
-    gotNewPulse = true;
+    if (counterTicksPulse > 400) {  // que tome como pulso valido si es mayor al umbral de bounce
+      pulseTicksLfo1 = counterTicksPulse * ratioLfo1;
+      pulsePeriodMsLfo1 = counterTicksPulse * SAMPLE_RATE_MS;
+      pulseTicksLfo2 = counterTicksPulse * ratioLfo2;
+      //pulsePeriodMsLfo2 = counterTicksPulse * SAMPLE_RATE_MS; //en verdad solo necesito el pulseperiod de uno solo
+      lfo.setPeriodMs(0, pulsePeriodMsLfo1);
+      lfo.setPeriodMs(1, pulsePeriodMsLfo1);
+
+      gotNewPulse = true;
+    }
   }
 
   if (pulseCounter % int(ceil(ratioLfo1 * multiplierSyncLfo1)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
-    // counterTicksLfo1 = 0;
+    // counterTicksPulse = 0;
     //  digitalWrite(17, HIGH);
     counterDivTicksLfo1 = 0;
+  }
+  if (pulseCounter % int(ceil(ratioLfo2 * multiplierSyncLfo2)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
+    // counterTicksPulse = 0;
+    //  digitalWrite(17, HIGH);
+    counterDivTicksLfo2 = 0;
   }
 
   pulseCounter++;
@@ -153,20 +174,33 @@ static void alarm_irq(void) {
   lfo.update();  // codigo lfo
 
   if (pulseConnected) {
-    if (counterDivTicksLfo1 % pulseTicksLfo1 == 0) {
-      if (newTrigger) {
-        digitalWrite(SYNC1_OUT_PIN, HIGH);
+    if (counterDivTicksLfo1 % pulseTicksLfo1 == 0) { //LFO1
+      if (newTriggerLfo1) {
+        //digitalWrite(SYNC1_OUT_PIN, HIGH);
         lfo.resetPhase(0);
-        lfo.resetPhase(1);
-        newTrigger = false;
+        //lfo.resetPhase(1);
+        newTriggerLfo1 = false;
       }
     } else if (counterDivTicksLfo1 % pulseTicksLfo1 == TRIGGER_DUTY) {
-      digitalWrite(SYNC1_OUT_PIN, LOW);
-      newTrigger = true;
+      //digitalWrite(SYNC1_OUT_PIN, LOW);
+      newTriggerLfo1 = true;
+    }
+    if (counterDivTicksLfo2 % pulseTicksLfo2 == 0) { //LFO1
+      if (newTriggerLfo2) {
+        //digitalWrite(SYNC1_OUT_PIN, HIGH);
+        lfo.resetPhase(1);
+        //lfo.resetPhase(1);
+        newTriggerLfo2 = false;
+      }
+    } else if (counterDivTicksLfo2 % pulseTicksLfo2 == TRIGGER_DUTY) {
+      //digitalWrite(SYNC1_OUT_PIN, LOW);
+      newTriggerLfo2 = true;
     }
 
-    counterTicksLfo1++;
+    counterTicksPulse++;
     counterDivTicksLfo1++;
+    counterDivTicksLfo2++;
+    counterTimeOut++;
   }
 }
 
@@ -197,8 +231,13 @@ void encoderInterrupt() {
 
 void displayBpm(float bpm) {
   oled.setCursor(0, 8);
+  oled.fillRect(0, 0, 63, 22, BLACK);
   oled.setTextSize(2);
-  oled.print(bpm, 1);
+  if (bpm != 0) {  // si no es bpm 0 es bpm, si no es EXT.
+    oled.print(bpm, 1);
+  } else {
+    oled.print("EXT");
+  }
   oled.display();
 }
 
@@ -216,10 +255,10 @@ void updateBpm() {
     periodMs = bpmToMs(bpm);
     lfo.setPeriodMs(0, periodMs);
     lfo.setPeriodMs(1, periodMs);
-  }
+
     displayBpm(bpm);
     tap.setBPM(bpm);  // para que el tap no salte a cualquier valor, que se vaya ajustando
-  
+  }
 }
 void updateEncoderBpm() {
   static int encoderValue = 1;
@@ -228,7 +267,9 @@ void updateEncoderBpm() {
 
   if (encoderValue != lastEncoderValue) {
     lastEncoderValue = encoderValue;
-    bpm += encoderValue;
+    if (!pulseConnected) { //que lo refresque si no hay clock externo
+      bpm += encoderValue;
+    }
     if (bpm >= MAX_BPM) {
       bpm = MAX_BPM;
     } else if (bpm <= MIN_BPM) {
@@ -352,10 +393,14 @@ void setup() {
     for (;;)
       ;
   }
+  lfo.setTriggerPeriod(0, TRIGGER_PERIOD);
+  lfo.setTriggerPeriod(1, TRIGGER_PERIOD);
   lfo.setPeriodMs(0, 500);
   lfo.setPeriodMs(1, 500);
   lfo.setRatio(0, 1);
   lfo.setRatio(1, 1);
+  lfo.setTriggerPolarity(0, POS);
+  lfo.setTriggerPolarity(1, POS);
   alarm_in_us(ALARM_PERIOD);
   attachInterrupt(digitalPinToInterrupt(ENC_PINA), encoderInterrupt, CHANGE);
   attachInterrupt(digitalPinToInterrupt(ENC_PINB), encoderInterrupt, CHANGE);
@@ -378,6 +423,7 @@ void setup() {
   updatePots();
   lfo.resetPhase(0);
   lfo.resetPhase(1);
+  displayBpm(120.0);
 }
 unsigned long count;
 void loop() {
@@ -388,20 +434,37 @@ void loop() {
   if (gotNewPulse) {
     // Serial.print(ratioLfo1);
     // Serial.print("  ");
-    // Serial.print(counterTicksLfo1);
+    // Serial.println(60000. /(counterTicksPulse * SAMPLE_RATE_MS));
+    // Serial.print(counterTicksPulse);
     // Serial.print("  ");
-    // Serial.println(counterTicksLfo1 * SAMPLE_RATE_MS);
-    if (counterTicksLfo1 < 400) {  //
+
+    Serial.println(60000. / (counterTicksPulse * SAMPLE_RATE_MS));
+    if (counterTicksPulse < 400) {  //
       Serial.println("disconnected");
-      pulseConnected = false;
-      lfo.disableSync();
-      updateBpm();
+      // pulseConnected = false;
+      // lfo.disableSync();
+      // updateBpm();
     }
     // displayBpm(msToBpm(pulsePeriodMsLfo1));
     gotNewPulse = false;
   }
-  if(lastGotNewPulse != gotNewPulse){
+  if (lastGotNewPulse != gotNewPulse) {
     updateBpm();
     lastGotNewPulse = gotNewPulse;
   }
+  if (pulseConnected && counterTimeOut > timeOut) {
+    pulseConnected = false;
+    lfo.disableSync();
+    updateBpm();
+  }
+  if (lastPulseConnected != pulseConnected) {
+    if (pulseConnected) {
+      displayBpm(0);  // 0 == ext clock
+    }
+    lastPulseConnected = pulseConnected;
+  }
+
+  // Serial.println(counterTimeOut);
+  // delay(100);
+  // Serial.println(counterTimeOut);
 }

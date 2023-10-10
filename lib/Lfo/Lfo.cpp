@@ -5,13 +5,19 @@
 #include "pico/stdlib.h"
 
 Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
-         uint32_t tableSize, uint16_t range) {
+         uint32_t tableSize, uint16_t range, uint8_t syncPin1, uint8_t syncPin2) {
   pinMode(lfoPin1, OUTPUT);
   pinMode(lfoPin2, OUTPUT);
+  pinMode(syncPin1, OUTPUT);
+  pinMode(syncPin2, OUTPUT);
   _lfoPin1 = lfoPin1;
   _lfoPin2 = lfoPin2;
+  _syncPin1 = syncPin1;
+  _syncPin2 = syncPin2;
   _lfoPins[0] = _lfoPin1;
   _lfoPins[1] = _lfoPin2;
+  _syncPins[0] = _syncPin1;
+  _syncPins[1] = _syncPin2;
   _tableSize = tableSize;
   _tableSizeFixedPoint = (_tableSize << 17);
   _ticksCycle = (float)((float)_tableSizeFixedPoint / float(sampleRate));
@@ -23,6 +29,19 @@ Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
 
 void Lfo::update() {
   for (int lfoN = 0; lfoN < 2; lfoN++) {
+    /////SYNC OUT
+    if (_phaseAcc[lfoN] == 0) {
+      _triggerCounter[lfoN] = 0;
+      digitalWrite(_syncPins[lfoN], _triggerOn[lfoN]);
+    }
+    
+    if (_triggerCounter[lfoN] > _triggerPeriod[lfoN]) {
+      digitalWrite(_syncPins[lfoN], _triggerOff[lfoN]);
+      _triggerCounter[lfoN] = 0;
+    }
+    _triggerCounter[lfoN]++;
+    /////////////
+
     /////incrementar acumulador segun freq (phaseInc) y ratio
     _phaseAcc[lfoN] += _phaseInc[lfoN];          //* _ratio[lfoN];
     _phaseAcc12b[lfoN] = _phaseAcc[lfoN] >> 17;  // >> 17 acorde a table size
@@ -84,6 +103,7 @@ void Lfo::update() {
         analogWrite(_lfoPins[lfoN], _output[lfoN] >> _rangeOutput);
       }
     }
+    
   }
   // analogWrite(_lfoPin1, _output[0]);
   // analogWrite(_lfoPin2, _output[1]);
@@ -118,17 +138,30 @@ void Lfo::resetPhase(uint8_t lfoNum) {
   _phaseAcc[lfoNum] = 0;
   //}
   // interrupts();
-  if (_syncEnabled) { //si recibe sync externo genera el random nuevo directamente en el reset. Ya que si no
-  //a veces genera un pico de glitch random porque genera un nuevo valor cuando resetea con clock, y otro si el acumulador resetea solo.
-    _output[lfoNum] = random(0, 4096);
-    analogWrite(_lfoPins[lfoNum], _output[lfoNum] >> _rangeOutput);
+  if (_syncEnabled) {  // si recibe sync externo genera el random nuevo directamente en el reset. Ya que si no
+    // a veces genera un pico de glitch random porque genera un nuevo valor cuando resetea con clock, y otro si el acumulador resetea solo.
+    if (_randomFlag[lfoNum]) {
+      _output[lfoNum] = random(0, 4096);
+      analogWrite(_lfoPins[lfoNum], _output[lfoNum] >> _rangeOutput);
+    }
   }
 }
-void Lfo::enableSync() { 
+void Lfo::enableSync() {
   _syncEnabled = true;
 }
 void Lfo::disableSync() {
   _syncEnabled = false;
+}
+void Lfo::syncOut(){
+  
+}
+void Lfo::setTriggerPeriod(uint8_t lfoNum, uint16_t triggerPeriod){
+  _triggerPeriod[lfoNum] = triggerPeriod;
+}
+
+void Lfo::setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity){
+_triggerOn[lfoNum] = triggerPolarity;
+_triggerOff[lfoNum] = 1-triggerPolarity;
 }
 /*
 Lfo::Lfo(volatile byte lfoPin, uint32_t sampleRate, uint32_t tableSize) {

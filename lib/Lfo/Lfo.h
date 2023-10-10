@@ -5,45 +5,52 @@
 #include "pico/stdlib.h"
 #include "wavetables.h"
 
-
-
-
 class Lfo {
-     public:
-     Lfo(volatile uint8_t lfoPin1, volatile uint8_t lfoPin2, uint32_t sampleRate, uint32_t tableSize, uint16_t range);
-     void setFreqHz(uint8_t lfoNum, float freq);
-     void update();
-     void setPeriodMs(uint8_t lfoNum, float period);
-     void setRatio(uint8_t lfoNum, float ratio);
-     void resetPhase(uint8_t lfoNum);
-     void setWave(uint8_t lfoNum, byte wave);
-     void enableSync(); //si recibe o no sync externo
-     void disableSync();
-     //void syncEnabled(uint8_t lfoNum);
-     private :
-    volatile uint8_t _lfoPin1;
-    volatile uint8_t _lfoPin2;
-    uint32_t _ticksCycle;
-    uint32_t _tableSizeFixedPoint;
-    uint32_t _tableSize;
-   volatile bool _syncEnabled = false;
-    volatile uint32_t _output[2];
-    volatile uint8_t _waveSelector[2];
-    volatile uint32_t _phaseInc[2];
-    volatile uint32_t _phaseAcc[2];
-    volatile uint16_t _phaseAcc12b[2];
-    volatile uint16_t _lfoPins[2];
-    volatile bool _randomFlag[2];
-    volatile float _ratio[2] = {1, 1};
-    volatile float _lastRatio[2] = {1, 1};
-    volatile float _period;
-    volatile int _bitshift;
-    volatile uint16_t _range;
-    volatile uint16_t _rangeOutput;
-    void computeWaveforms();
-    
+ public:
+  Lfo(volatile uint8_t lfoPin1, volatile uint8_t lfoPin2, uint32_t sampleRate, uint32_t tableSize, uint16_t range, uint8_t syncPin1, uint8_t syncPin2);
+  void setFreqHz(uint8_t lfoNum, float freq);
+  void update();
+  void setPeriodMs(uint8_t lfoNum, float period);
+  void setRatio(uint8_t lfoNum, float ratio);
+  void resetPhase(uint8_t lfoNum);
+  void setWave(uint8_t lfoNum, byte wave);
+  void enableSync();  // si recibe o no sync externo
+  void disableSync();
+  void setTriggerPeriod(uint8_t lfoNum, uint16_t triggerPeriod);
+  void setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity);
+  // void syncEnabled(uint8_t lfoNum);
+ private:
+  volatile uint8_t _lfoPin1;
+  volatile uint8_t _lfoPin2;
+  volatile uint8_t _syncPin1;
+  volatile uint8_t _syncPin2;
+  uint32_t _ticksCycle;
+  uint32_t _tableSizeFixedPoint;
+  uint32_t _tableSize;
+  volatile bool _syncEnabled = false;
+  volatile uint32_t _output[2];
+  volatile uint8_t _waveSelector[2];
+  volatile uint32_t _phaseInc[2];
+  volatile uint32_t _phaseAcc[2];
+  volatile uint16_t _phaseAcc12b[2];
+  volatile uint16_t _lfoPins[2];
+  volatile uint16_t _syncPins[2];
+  volatile bool _randomFlag[2];
+  volatile float _ratio[2] = {1, 1};
+  volatile float _lastRatio[2] = {1, 1};
+  volatile float _period;
+  volatile uint16_t _bitshift;
+  volatile uint16_t _range;
+  volatile uint16_t _rangeOutput;
+  volatile uint32_t _triggerPeriod[2] = {200, 200};
+  volatile uint32_t _triggerCounter[2];
+  volatile bool _triggerOn[2] = {1, 1};
+  volatile bool _triggerOff[2] = {0, 0};
+  void computeWaveforms();
+  void syncOut();
+  
 };
-//const int Lfo::bitshift = 17; //4096
+// const int Lfo::bitshift = 17; //4096
 /*
 class Lfo {
    public:
@@ -67,7 +74,7 @@ class Lfo {
     volatile uint32_t _phaseAcc = 0;
     const static int _bitShift = 17;
     volatile uint32_t _phaseAcc12b;
-    
+
 };
    //const int Lfo::bitshift = 17; //4096
 
