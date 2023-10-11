@@ -13,6 +13,8 @@
 #include <Lfo.h>
 #include <ResponsiveAnalogRead.h>
 #include <Wire.h>
+// #include <Encoder.h>
+#include <pio_encoder.h>
 
 #include "pico/stdlib.h"
 #include "settings.h"
@@ -45,8 +47,7 @@
 #define TRIGGER_DUTY 200  // 200 * 10khz = 20mS
 #define POS 1
 #define INV 0
-const uint16_t TRIGGER_PERIOD = 200; // 200 ticks a 10khz * 0.1ms = 20ms
-
+const uint16_t TRIGGER_PERIOD = 200;  // 200 ticks a 10khz * 0.1ms = 20ms
 
 const uint8_t NUM_WAVES = 7;
 const uint32_t SAMPLE_RATE = 10000;  // dejar fijo en 10khz o 4khz?
@@ -64,7 +65,7 @@ ArduinoTapTempo tap;
 Bounce wave1 = Bounce();
 Bounce wave2 = Bounce();
 Bounce tapBounce = Bounce();
-
+PioEncoder encoder(2);
 const float multipliers[] = {0.25, 0.5, 0.66666, 1., 1.5, 2., 3., 4.};
 const uint8_t numMultipliers = (sizeof(multipliers) / sizeof(byte*));
 const uint8_t multipliersSync[numMultipliers] = {4, 2, 6, 1, 2, 1, 1, 1};
@@ -94,7 +95,7 @@ volatile uint32_t counterTicksPulse;
 volatile uint32_t counterDivTicksLfo1;
 volatile uint32_t pulseTicksLfo1;
 volatile float pulsePeriodMsLfo1;
-//volatile uint32_t counterTicksLfo2;
+// volatile uint32_t counterTicksLfo2;
 volatile uint32_t counterDivTicksLfo2;
 volatile uint32_t pulseTicksLfo2;
 volatile float pulsePeriodMsLfo2;
@@ -139,7 +140,7 @@ void syncPulse() {
       pulseTicksLfo1 = counterTicksPulse * ratioLfo1;
       pulsePeriodMsLfo1 = counterTicksPulse * SAMPLE_RATE_MS;
       pulseTicksLfo2 = counterTicksPulse * ratioLfo2;
-      //pulsePeriodMsLfo2 = counterTicksPulse * SAMPLE_RATE_MS; //en verdad solo necesito el pulseperiod de uno solo
+      // pulsePeriodMsLfo2 = counterTicksPulse * SAMPLE_RATE_MS; //en verdad solo necesito el pulseperiod de uno solo
       lfo.setPeriodMs(0, pulsePeriodMsLfo1);
       lfo.setPeriodMs(1, pulsePeriodMsLfo1);
 
@@ -174,26 +175,26 @@ static void alarm_irq(void) {
   lfo.update();  // codigo lfo
 
   if (pulseConnected) {
-    if (counterDivTicksLfo1 % pulseTicksLfo1 == 0) { //LFO1
+    if (counterDivTicksLfo1 % pulseTicksLfo1 == 0) {  // LFO1
       if (newTriggerLfo1) {
-        //digitalWrite(SYNC1_OUT_PIN, HIGH);
+        // digitalWrite(SYNC1_OUT_PIN, HIGH);
         lfo.resetPhase(0);
-        //lfo.resetPhase(1);
+        // lfo.resetPhase(1);
         newTriggerLfo1 = false;
       }
     } else if (counterDivTicksLfo1 % pulseTicksLfo1 == TRIGGER_DUTY) {
-      //digitalWrite(SYNC1_OUT_PIN, LOW);
+      // digitalWrite(SYNC1_OUT_PIN, LOW);
       newTriggerLfo1 = true;
     }
-    if (counterDivTicksLfo2 % pulseTicksLfo2 == 0) { //LFO1
+    if (counterDivTicksLfo2 % pulseTicksLfo2 == 0) {  // LFO1
       if (newTriggerLfo2) {
-        //digitalWrite(SYNC1_OUT_PIN, HIGH);
+        // digitalWrite(SYNC1_OUT_PIN, HIGH);
         lfo.resetPhase(1);
-        //lfo.resetPhase(1);
+        // lfo.resetPhase(1);
         newTriggerLfo2 = false;
       }
     } else if (counterDivTicksLfo2 % pulseTicksLfo2 == TRIGGER_DUTY) {
-      //digitalWrite(SYNC1_OUT_PIN, LOW);
+      // digitalWrite(SYNC1_OUT_PIN, LOW);
       newTriggerLfo2 = true;
     }
 
@@ -261,14 +262,33 @@ void updateBpm() {
   }
 }
 void updateEncoderBpm() {
-  static int encoderValue = 1;
-  static int lastEncoderValue = 1;
-  encoderValue = encoderValueISR;
-
+  // static int encoderValue = 1;
+  // static int lastEncoderValue = 1;
+  // encoderValue = encoderValueISR;
+  static int encoderValue;
+  static int lastEncoderValue;
+  static int encoderResult;
+  encoderValue = encoder.getCount() / 4;
   if (encoderValue != lastEncoderValue) {
+    /*if(encoderValue > lastEncoderValue){
+      encoderValue = 1;
+      lastEncoderValue = 1;
+    }
+    else{
+      encoderValue = -1;
+      lastEncoderValue = -1;
+    }*/
+    if (encoderValue > lastEncoderValue) {
+      encoderResult = 1;
+      //Serial.println("sube");
+    } else {
+      //Serial.println("baja");
+      encoderResult = -1;
+    }
+
     lastEncoderValue = encoderValue;
-    if (!pulseConnected) { //que lo refresque si no hay clock externo
-      bpm += encoderValue;
+    if (!pulseConnected) {  // que lo refresque si no hay clock externo
+      bpm += encoderResult;
     }
     if (bpm >= MAX_BPM) {
       bpm = MAX_BPM;
@@ -371,6 +391,8 @@ void tapTempo() {
 
 void setup() {
   Serial.begin(9600);
+  encoder.begin();
+  encoder.flip();
   analogWriteFreq(PWM_FREQ);
   analogWriteRange(PWM_RANGE);
   pinMode(BUILTIN_LED, OUTPUT);
@@ -402,8 +424,8 @@ void setup() {
   lfo.setTriggerPolarity(0, POS);
   lfo.setTriggerPolarity(1, POS);
   alarm_in_us(ALARM_PERIOD);
-  attachInterrupt(digitalPinToInterrupt(ENC_PINA), encoderInterrupt, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(ENC_PINB), encoderInterrupt, CHANGE);
+  // attachInterrupt(digitalPinToInterrupt(ENC_PINA), encoderInterrupt, CHANGE);
+  // attachInterrupt(digitalPinToInterrupt(ENC_PINB), encoderInterrupt, CHANGE);
   attachInterrupt(digitalPinToInterrupt(SYNC_IN_PIN), syncPulse, RISING);
   // oled.setFont(&FreeSans9pt7b);
   oled.display();
@@ -467,4 +489,7 @@ void loop() {
   // Serial.println(counterTimeOut);
   // delay(100);
   // Serial.println(counterTimeOut);
+  // encoder.reset();
+  // Serial.println(encoder.getCount() / 4);
+  delay(10);
 }
