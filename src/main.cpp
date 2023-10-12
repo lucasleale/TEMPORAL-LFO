@@ -14,8 +14,9 @@
 #include <ResponsiveAnalogRead.h>
 #include <Wire.h>
 // #include <Encoder.h>
+#include <elapsedMillis.h>
 #include <pio_encoder.h>
-
+elapsedMillis fps;
 #include "pico/stdlib.h"
 #include "settings.h"
 
@@ -44,6 +45,8 @@
 #define MIN_BPM 40
 #define ROW1_WAVE 64  // coordenadas Y para el dibujo de formas de onda
 #define ROW2_WAVE 88
+#define ROW1_RATIO 68
+#define ROW2_RATIO 92
 #define TRIGGER_DUTY 200  // 200 * 10khz = 20mS
 #define POS 1
 #define INV 0
@@ -92,6 +95,8 @@ const uint8_t* wavetablesOled[] = {sineOled,
                                    randomOled};
 
 volatile uint32_t counterTicksPulse;
+uint32_t counterTicksLoop;
+
 volatile uint32_t counterDivTicksLfo1;
 volatile uint32_t pulseTicksLfo1;
 volatile float pulsePeriodMsLfo1;
@@ -118,9 +123,15 @@ volatile int encoderValueISR;
 bool polarityLfo1 = 0;
 bool polarityLfo2 = 0;
 float bpm = 120.;
+float bpmCore2 = 120.;
+bool newBpm = false;
+bool newWave = false;
 float periodMs = 500;
 bool tapState;
-
+byte waveSelector1Core2;
+byte waveSelector2Core2;
+int multiplier1Core2;
+int multiplier2Core2;
 void syncPulse() {
   pulseConnected = true;
   counterTimeOut = 0;  // este es el watchdog, resetea a 0 en todos los pulsos
@@ -132,7 +143,6 @@ void syncPulse() {
   //}
   if (pulseCounter % 2 == 0) {  // always
     counterTicksPulse = 0;
-
   } else if (pulseCounter % 2 == 1) {  // always
     // pulsePeriod = counter * 0.5; //creo que lo calculamos fuera del timer, aca y en ratio
 
@@ -230,18 +240,6 @@ void encoderInterrupt() {
   }
 }
 
-void displayBpm(float bpm) {
-  oled.setCursor(0, 8);
-  oled.fillRect(0, 0, 63, 22, BLACK);
-  oled.setTextSize(2);
-  if (bpm != 0) {  // si no es bpm 0 es bpm, si no es EXT.
-    oled.print(bpm, 1);
-  } else {
-    oled.print("EXT");
-  }
-  oled.display();
-}
-
 float bpmToMs(float bpm) {
   const float msQuarter = 60000.;
   return (float)msQuarter / (float)bpm;
@@ -257,36 +255,25 @@ void updateBpm() {
     lfo.setPeriodMs(0, periodMs);
     lfo.setPeriodMs(1, periodMs);
 
-    displayBpm(bpm);
+    // displayBpm(bpm);
+    bpmCore2 = bpm;
+    // pushCore2 = true;
     tap.setBPM(bpm);  // para que el tap no salte a cualquier valor, que se vaya ajustando
   }
 }
 void updateEncoderBpm() {
-  // static int encoderValue = 1;
-  // static int lastEncoderValue = 1;
-  // encoderValue = encoderValueISR;
   static int encoderValue;
   static int lastEncoderValue;
   static int encoderResult;
-  encoderValue = encoder.getCount() / 4;
+  encoderValue = encoder.getCount() >> 2;  // dividido 4
   if (encoderValue != lastEncoderValue) {
-    /*if(encoderValue > lastEncoderValue){
-      encoderValue = 1;
-      lastEncoderValue = 1;
-    }
-    else{
-      encoderValue = -1;
-      lastEncoderValue = -1;
-    }*/
     if (encoderValue > lastEncoderValue) {
       encoderResult = 1;
-      //Serial.println("sube");
+      // Serial.println("sube");
     } else {
-      //Serial.println("baja");
+      // Serial.println("baja");
       encoderResult = -1;
     }
-
-    lastEncoderValue = encoderValue;
     if (!pulseConnected) {  // que lo refresque si no hay clock externo
       bpm += encoderResult;
     }
@@ -296,8 +283,10 @@ void updateEncoderBpm() {
       bpm = MIN_BPM;
     }
     updateBpm();
+    lastEncoderValue = encoderValue;
   }
 }
+
 void updatePots() {
   potMult1.update();
   potMult2.update();
@@ -306,43 +295,31 @@ void updatePots() {
   multiplier1 = map(potMult1.getValue(), 0, 1023, 0, numMultipliers);
   multiplier2 = map(potMult2.getValue(), 0, 1023, 0, numMultipliers);
 
+  // delay(20);
   if (multiplier1 != lastMultiplier1) {
     lastMultiplier1 = multiplier1;
-    oled.setTextSize(1);
-    oled.setCursor(36, 68);
+    // oled.setTextSize(1);
+    // oled.setCursor(36, 68);
     ratioLfo1 = multipliers[multiplier1];
+    // multipliers1Core2 = multipliersOled[multiplier1];
+    multiplier1Core2 = multiplier1;
     multiplierSyncLfo1 = multipliersSync[multiplier1];
-    oled.print(multipliersOled[multiplier1]);
-    oled.display();
+    // oled.print(multipliersOled[multiplier1]);
+    // oled.display();
     lfo.setRatio(0, ratioLfo1);
   }
   if (multiplier2 != lastMultiplier2) {
     lastMultiplier2 = multiplier2;
-    oled.setTextSize(1);
-    oled.setCursor(36, 92);
+    // oled.setTextSize(1);
+    // oled.setCursor(36, 92);
+    // multipliers2Core2 = multipliersOled[multiplier2];
+    multiplier2Core2 = multiplier2;
     ratioLfo2 = multipliers[multiplier2];
     multiplierSyncLfo2 = multipliersSync[multiplier2];
-    oled.print(multipliersOled[multiplier2]);
-    oled.display();
+    // oled.print(multipliersOled[multiplier2]);
+    // oled.display();
     lfo.setRatio(1, ratioLfo2);
   }
-}
-void displayWave(byte wave, byte row) {
-  oled.fillRect(0, row - 1, oledWidth, 18, BLACK);  // row-1 por el borde que le falta a fillrect
-  uint8_t* wavetables;                              // pointer al array de wavetablesoleds
-  if (wave != 6) {                                  // si no es hold, cambiar el 6 por un macro para editar mas facil adelante
-    wavetables = (uint8_t*)wavetablesOled[wave];    // scanea la memoria segun indice wave
-    for (int i = 0; i < oledWidth; i++) {
-      if (wave != 5) {  // si no es random que haga wrap en cada ciclo
-        oled.drawLine(i, wavetables[i % oledX] + row, i, wavetables[(i + 1) % oledX] + row, WHITE);
-      } else {
-        oled.drawLine(i, wavetables[i % oledWidth] + row, i, wavetables[(i + 1) % oledWidth] + row, WHITE);
-      }
-    }
-  } else {
-    oled.drawLine(0, row, oledWidth - 1, row, WHITE);
-  }
-  oled.display();
 }
 
 void updateButtons() {
@@ -352,7 +329,9 @@ void updateButtons() {
   static uint8_t waveSelector2 = 1;
   if (wave1.rose()) {
     lfo.setWave(0, waveSelector1);
-    displayWave(waveSelector1, ROW1_WAVE);
+    waveSelector1Core2 = waveSelector1;
+    // pushCore2 = true;
+    //  displayWave(waveSelector1, ROW1_WAVE);
     waveSelector1++;
     if (waveSelector1 == NUM_WAVES) {
       waveSelector1 = 0;
@@ -361,7 +340,9 @@ void updateButtons() {
 
   if (wave2.rose()) {
     lfo.setWave(1, waveSelector2);
-    displayWave(waveSelector2, ROW2_WAVE);
+    waveSelector2Core2 = waveSelector2;
+    // displayWave(waveSelector2, ROW2_WAVE);
+    // pushCore2 = true;
     waveSelector2++;
 
     if (waveSelector2 == NUM_WAVES) {
@@ -384,13 +365,14 @@ void tapTempo() {
       lfo.setPeriodMs(0, periodMs);
       lfo.setPeriodMs(1, periodMs);
       bpm = msToBpm(periodMs);
-      displayBpm(bpm);
+      bpmCore2 = bpm;
+      // displayBpm(bpm);
     }
   }
 }
 
 void setup() {
-  Serial.begin(9600);
+  // Serial.begin(9600);
   encoder.begin();
   encoder.flip();
   analogWriteFreq(PWM_FREQ);
@@ -410,11 +392,7 @@ void setup() {
   wave2.interval(25);
   tapBounce.attach(TAP_PIN, INPUT_PULLUP);
   tapBounce.interval(25);
-  if (!oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 allocation failed"));
-    for (;;)
-      ;
-  }
+
   lfo.setTriggerPeriod(0, TRIGGER_PERIOD);
   lfo.setTriggerPeriod(1, TRIGGER_PERIOD);
   lfo.setPeriodMs(0, 500);
@@ -424,19 +402,18 @@ void setup() {
   lfo.setTriggerPolarity(0, POS);
   lfo.setTriggerPolarity(1, POS);
   alarm_in_us(ALARM_PERIOD);
-  // attachInterrupt(digitalPinToInterrupt(ENC_PINA), encoderInterrupt, CHANGE);
-  // attachInterrupt(digitalPinToInterrupt(ENC_PINB), encoderInterrupt, CHANGE);
+
   attachInterrupt(digitalPinToInterrupt(SYNC_IN_PIN), syncPulse, RISING);
   // oled.setFont(&FreeSans9pt7b);
-  oled.display();
-  oled.clearDisplay();
-  oled.setRotation(1);
-  oled.setTextSize(1);
-  oled.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+  // oled.display();
+  // oled.clearDisplay();
+  // oled.setRotation(1);
+  // oled.setTextSize(1);
+  // oled.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
 
-  displayWave(0, ROW2_WAVE);
-  displayWave(0, ROW1_WAVE);
-  oled.display();
+  // displayWave(0, ROW2_WAVE);
+  // displayWave(0, ROW1_WAVE);
+  // oled.display();
   potMult1.setActivityThreshold(32);
   potMult1.setSnapMultiplier(0.0001);
   potMult2.setActivityThreshold(32);
@@ -445,9 +422,9 @@ void setup() {
   updatePots();
   lfo.resetPhase(0);
   lfo.resetPhase(1);
-  displayBpm(120.0);
+  // displayBpm(120.0);
 }
-unsigned long count;
+
 void loop() {
   updatePots();
   updateButtons();
@@ -460,18 +437,26 @@ void loop() {
     // Serial.print(counterTicksPulse);
     // Serial.print("  ");
 
-    Serial.println(60000. / (counterTicksPulse * SAMPLE_RATE_MS));
+    // Serial.println(60000. / (counterTicksPulse * SAMPLE_RATE_MS));
+    // noInterrupts();
+    counterTicksLoop = counterTicksPulse;
+    // rp2040.fifo.push(counterTicksLoop);
+
+    // interrupts();
+    Serial.println(counterTicksLoop);
     if (counterTicksPulse < 400) {  //
-      Serial.println("disconnected");
-      // pulseConnected = false;
-      // lfo.disableSync();
-      // updateBpm();
+      // Serial.println("disconnected");
+      //  pulseConnected = false;
+      //  lfo.disableSync();
+      //  updateBpm();
     }
     // displayBpm(msToBpm(pulsePeriodMsLfo1));
+
     gotNewPulse = false;
   }
   if (lastGotNewPulse != gotNewPulse) {
     updateBpm();
+
     lastGotNewPulse = gotNewPulse;
   }
   if (pulseConnected && counterTimeOut > timeOut) {
@@ -481,7 +466,9 @@ void loop() {
   }
   if (lastPulseConnected != pulseConnected) {
     if (pulseConnected) {
-      displayBpm(0);  // 0 == ext clock
+      // displayBpm(0);  // 0 == ext clock
+      bpmCore2 = 0;
+      // newBpm = true;
     }
     lastPulseConnected = pulseConnected;
   }
@@ -491,5 +478,96 @@ void loop() {
   // Serial.println(counterTimeOut);
   // encoder.reset();
   // Serial.println(encoder.getCount() / 4);
-  delay(10);
+  // delay(10);
+  // rp2040.fifo.push(500);
+  // delay(30);
+
+  // delay(33);
+}
+
+//////CORE 2 PARA OLED Y NEOPIXEL
+void displayBpm(float bpm) {
+  oled.setCursor(0, 8);
+  oled.fillRect(0, 0, 63, 22, BLACK);
+  oled.setTextSize(2);
+  if (bpm != 0) {  // si no es bpm 0 es bpm, si no es EXT.
+    oled.print(bpm, 1);
+  } else {
+    oled.print("EXT");
+  }
+  oled.display();
+}
+
+void displayRatio(int multiplier, byte row) {
+  oled.setTextSize(1);
+  oled.setCursor(36, row);
+  oled.print(multipliersOled[multiplier]);
+  oled.display();
+}
+
+void displayWave(byte wave, byte row) {
+  oled.fillRect(0, row - 1, oledWidth, 18, BLACK);  // row-1 por el borde que le falta a fillrect
+  uint8_t* wavetables;                              // pointer al array de wavetablesoleds
+  if (wave != 6) {                                  // si no es hold, cambiar el 6 por un macro para editar mas facil adelante
+    wavetables = (uint8_t*)wavetablesOled[wave];    // scanea la memoria segun indice wave
+    for (int i = 0; i < oledWidth; i++) {
+      if (wave != 5) {  // si no es random que haga wrap en cada ciclo
+        oled.drawLine(i, wavetables[i % oledX] + row, i, wavetables[(i + 1) % oledX] + row, WHITE);
+      } else {
+        oled.drawLine(i, wavetables[i % oledWidth] + row, i, wavetables[(i + 1) % oledWidth] + row, WHITE);
+      }
+    }
+  } else {
+    oled.drawLine(0, row, oledWidth - 1, row, WHITE);
+  }
+  oled.display();
+}
+void setup1() {
+  Serial.begin(9600);
+  if (!oled.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+    // Serial.println(F("SSD1306 allocation failed"));
+    for (;;)
+      ;
+  }
+  oled.display();
+  oled.clearDisplay();
+  oled.setRotation(1);
+  oled.setTextSize(1);
+  oled.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+  displayWave(0, ROW1_WAVE);
+  displayWave(0, ROW2_WAVE);
+  displayBpm(120.0);
+}
+
+float lastBpmCore2;
+byte lastWaveSelector1Core2;
+byte lastWaveSelector2Core2;
+int lastMultiplier1Core2;
+int lastMultiplier2Core2;
+void loop1() {
+  // uint32_t counterTicksPulseCore = rp2040.fifo.pop();
+  // Serial.println(counterTicksPulseCore);
+  // delay(20);
+  if (lastBpmCore2 != bpmCore2) {
+    displayBpm(bpmCore2);
+    lastBpmCore2 = bpmCore2;
+  }
+
+  if (lastWaveSelector1Core2 != waveSelector1Core2) {
+    displayWave(waveSelector1Core2, ROW1_WAVE);
+    lastWaveSelector1Core2 = waveSelector1Core2;
+  }
+
+  if (lastWaveSelector2Core2 != waveSelector2Core2) {
+    displayWave(waveSelector2Core2, ROW2_WAVE);
+    lastWaveSelector2Core2 = waveSelector2Core2;
+  }
+  if (lastMultiplier1Core2 != multiplier1Core2) {
+    displayRatio(multiplier1Core2, ROW1_RATIO);
+    lastMultiplier1Core2 = multiplier1Core2;
+  }
+  if (lastMultiplier2Core2 != multiplier2Core2) {
+    displayRatio(multiplier2Core2, ROW2_RATIO);
+    lastMultiplier2Core2 = multiplier2Core2;
+  }
 }
