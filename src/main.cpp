@@ -16,7 +16,7 @@
 // #include <Encoder.h>
 #include <elapsedMillis.h>
 #include <pio_encoder.h>
-elapsedMillis fps;
+
 #include "pico/stdlib.h"
 #include "settings.h"
 
@@ -34,6 +34,7 @@ elapsedMillis fps;
 #define BTN1_PIN 14
 #define BTN2_PIN 15
 #define TAP_PIN 12
+#define TAP_JACK 22
 #define ENC_PINA 3
 #define ENC_PINB 2
 #define LFO1_PIN 20
@@ -67,8 +68,12 @@ ResponsiveAnalogRead potMult2(POT2_PIN, true);
 ArduinoTapTempo tap;
 Bounce wave1 = Bounce();
 Bounce wave2 = Bounce();
-Bounce tapBounce = Bounce();
+Bounce tapBtn = Bounce();
+Bounce tapExt = Bounce();
 PioEncoder encoder(2);
+elapsedMillis btnWaveTime1;
+elapsedMillis btnWaveTime2;
+
 const float multipliers[] = {0.25, 0.5, 0.66666, 1., 1.5, 2., 3., 4.};
 const uint8_t numMultipliers = (sizeof(multipliers) / sizeof(byte*));
 const uint8_t multipliersSync[numMultipliers] = {4, 2, 6, 1, 2, 1, 1, 1};
@@ -132,6 +137,8 @@ byte waveSelector1Core2;
 byte waveSelector2Core2;
 int multiplier1Core2;
 int multiplier2Core2;
+bool btnWaveHold1;
+bool btnWaveHold2;
 void syncPulse() {
   pulseConnected = true;
   counterTimeOut = 0;  // este es el watchdog, resetea a 0 en todos los pulsos
@@ -327,7 +334,9 @@ void updateButtons() {
   wave2.update();
   static uint8_t waveSelector1 = 1;
   static uint8_t waveSelector2 = 1;
-  if (wave1.rose()) {
+
+  if (wave1.rose() && btnWaveTime1 < 1000) {
+    Serial.println("wave");
     lfo.setWave(0, waveSelector1);
     waveSelector1Core2 = waveSelector1;
     // pushCore2 = true;
@@ -337,8 +346,16 @@ void updateButtons() {
       waveSelector1 = 0;
     }
   }
+  if (wave1.fell()) {
+    btnWaveTime1 = 0;
+    btnWaveHold1 = true;
+  }
+  if (wave1.read() == LOW && btnWaveTime1 >= 1000 && btnWaveHold1) {
+    Serial.println("free running");
+    btnWaveHold1 = false;
+  }
 
-  if (wave2.rose()) {
+  if (wave2.rose() && btnWaveTime2 < 1000) {
     lfo.setWave(1, waveSelector2);
     waveSelector2Core2 = waveSelector2;
     // displayWave(waveSelector2, ROW2_WAVE);
@@ -349,15 +366,23 @@ void updateButtons() {
       waveSelector2 = 0;
     }
   }
+  if (wave2.fell()) {
+    btnWaveTime2 = 0;
+    btnWaveHold2 = true;
+  }
+  if (wave2.read() == LOW && btnWaveTime2 >= 1000 && btnWaveHold2) {
+    Serial.println("free running");
+    btnWaveHold2 = false;
+  }
 }
 
 void tapTempo() {
   if (!pulseConnected) {
-    tapBounce.update();
-    tapState = tapBounce.read();
+    tapBtn.update();
+    tapState = tapBtn.read() ^ tapExt.read(); //deberia ser OR pero como es invertido usamos XOR.
     tap.update(tapState);
 
-    if (tapBounce.fell()) {
+    if (tapBtn.fell() || tapExt.fell()) {
       periodMs = tap.getBeatLength();
 
       lfo.resetPhase(0);
@@ -383,6 +408,7 @@ void setup() {
   pinMode(LFO1_PIN, OUTPUT);
   pinMode(LFO2_PIN, OUTPUT);
   pinMode(TAP_PIN, INPUT_PULLUP);
+  pinMode(TAP_JACK, INPUT_PULLUP);
   pinMode(SYNC1_OUT_PIN, OUTPUT);
   pinMode(SYNC2_OUT_PIN, OUTPUT);
   pinMode(SYNC_IN_PIN, INPUT_PULLUP);
@@ -390,9 +416,10 @@ void setup() {
   wave2.attach(BTN2_PIN, INPUT_PULLUP);
   wave1.interval(25);
   wave2.interval(25);
-  tapBounce.attach(TAP_PIN, INPUT_PULLUP);
-  tapBounce.interval(25);
-
+  tapBtn.attach(TAP_PIN, INPUT_PULLUP);
+  tapBtn.interval(25);
+  tapExt.attach(TAP_JACK, INPUT_PULLUP);
+  tapExt.interval(25);
   lfo.setTriggerPeriod(0, TRIGGER_PERIOD);
   lfo.setTriggerPeriod(1, TRIGGER_PERIOD);
   lfo.setPeriodMs(0, 500);
