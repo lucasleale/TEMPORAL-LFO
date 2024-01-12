@@ -11,6 +11,7 @@ class Lfo {
   void setFreqHz(uint8_t lfoNum, float freq);
   void update();
   void setPeriodMs(uint8_t lfoNum, float period);
+  void setPeriodMsClock(float period); //el clock out tiene su propio periodo, si no, cuando esta en free running se cambia a algun lfo
   void setRatio(uint8_t lfoNum, float ratio);
   void resetPhase(uint8_t lfoNum);
   void setWave(uint8_t lfoNum, byte wave);

@@ -170,6 +170,7 @@ void syncPulse() {
       // pulsePeriodMsLfo2 = counterTicksPulse * SAMPLE_RATE_MS; //en verdad solo necesito el pulseperiod de uno solo
       lfo.setPeriodMs(0, pulsePeriodMsLfo1);
       lfo.setPeriodMs(1, pulsePeriodMsLfo1);
+      lfo.setPeriodMsClock(periodMs);
 
       gotNewPulse = true;
     }
@@ -271,7 +272,7 @@ void updateBpm() {
     periodMs = bpmToMs(bpm);
     lfo.setPeriodMs(0, periodMs);
     lfo.setPeriodMs(1, periodMs);
-
+    lfo.setPeriodMsClock(periodMs);
     // displayBpm(bpm);
     bpmCore2 = bpm;
     // pushCore2 = true;
@@ -331,7 +332,7 @@ void updatePots() {
       lfo.setRatio(0, ratioLfo1);
     }
   }
-  periodFreeRunning1 = fscale(potMult1.getValue(), 3, 1023, 10000, 100, 7);
+  periodFreeRunning1 = fscale(potMult1.getValue(), 3, 1023, 1000, 100, 7);
   
   periodFreeRunning1Core2 = periodFreeRunning1;
   if (isFreeRunning1) {
@@ -357,7 +358,7 @@ void updatePots() {
       lfo.setRatio(1, ratioLfo2);
     }
   }
-  periodFreeRunning2 = fscale(potMult2.getValue(), 3, 1023, 10000, 100, 7);
+  periodFreeRunning2 = fscale(potMult2.getValue(), 3, 1023, 1000, 100, 7);
   periodFreeRunning2Core2 = periodFreeRunning2;
   if (isFreeRunning2) {
     if (potMult2.hasChanged()) {
@@ -455,10 +456,12 @@ void tapTempo() {
       lfo.resetPhase(1);
       if(!isFreeRunning1){
       lfo.setPeriodMs(0, periodMs);
+      
       }
       if(!isFreeRunning2){
       lfo.setPeriodMs(1, periodMs);
       }
+      lfo.setPeriodMsClock(periodMs);
       bpm = msToBpm(periodMs);
       bpmCore2 = bpm;
       // displayBpm(bpm);
@@ -494,6 +497,7 @@ void setup() {
   lfo.setTriggerPeriod(1, TRIGGER_PERIOD);
   lfo.setPeriodMs(0, 500);
   lfo.setPeriodMs(1, 500);
+  lfo.setPeriodMsClock(500);
   lfo.setRatio(0, 1);
   lfo.setRatio(1, 1);
   lfo.setTriggerPolarity(0, POS);

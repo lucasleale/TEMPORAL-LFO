@@ -184,6 +184,10 @@ void Lfo::setPeriodMs(uint8_t lfoNum, float period) {
   // setFreqHz(freqFromPeriod);
   _period[lfoNum] = period;
   _phaseInc[lfoNum] = _ticksCycle * (1000. / (period * _ratio[lfoNum]));
+  
+}
+
+void Lfo::setPeriodMsClock(float period){
   _phaseIncClockOut = _ticksCycle * (1000. / period);  // clock sin ratio
 }
 
