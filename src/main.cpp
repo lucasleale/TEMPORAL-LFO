@@ -160,8 +160,13 @@ bool flagFreq;
 bool flagFreq2;
 void syncPulse() {
   pulseConnected = true;
-  counterTimeOut = 0;  // este es el watchdog, resetea a 0 en todos los pulsos
-  lfo.enableSync();
+  counterTimeOut = 0;     // este es el watchdog, resetea a 0 en todos los pulsos
+  if (!isFreeRunning1) {  // el sync lo activa solo si no esta en free
+    lfo.enableSync(0);
+  }
+  if (!isFreeRunning2) {
+    lfo.enableSync(1);
+  }
   // if(ratioLfo1 == 1){
   //   digitalWrite(SYNC1_OUT_PIN, HIGH); //thru
   //   counterDivTicksLfo1 = 0;
@@ -177,8 +182,12 @@ void syncPulse() {
       pulsePeriodMsLfo1 = counterTicksPulse * SAMPLE_RATE_MS;
       pulseTicksLfo2 = counterTicksPulse * ratioLfo2;
       // pulsePeriodMsLfo2 = counterTicksPulse * SAMPLE_RATE_MS; //en verdad solo necesito el pulseperiod de uno solo
-      lfo.setPeriodMs(0, pulsePeriodMsLfo1);
-      lfo.setPeriodMs(1, pulsePeriodMsLfo1);
+      if (!isFreeRunning1) {  // lo mismo aca con el free running
+        lfo.setPeriodMs(0, pulsePeriodMsLfo1);
+      }
+      if (!isFreeRunning2) {
+        lfo.setPeriodMs(1, pulsePeriodMsLfo1);
+      }
       lfo.setPeriodMsClock(periodMs);
 
       gotNewPulse = true;
@@ -215,7 +224,9 @@ static void alarm_irq(void) {
     if (counterDivTicksLfo1 % pulseTicksLfo1 == 0) {  // LFO1
       if (newTriggerLfo1) {
         // digitalWrite(SYNC1_OUT_PIN, HIGH);
-        lfo.resetPhase(0);
+        if (!isFreeRunning1) {
+          lfo.resetPhase(0);
+        }
         // lfo.resetPhase(1);
         newTriggerLfo1 = false;
       }
@@ -226,7 +237,9 @@ static void alarm_irq(void) {
     if (counterDivTicksLfo2 % pulseTicksLfo2 == 0) {  // LFO1
       if (newTriggerLfo2) {
         // digitalWrite(SYNC1_OUT_PIN, HIGH);
-        lfo.resetPhase(1);
+        if (!isFreeRunning2) {
+          lfo.resetPhase(1);
+        }
         // lfo.resetPhase(1);
         newTriggerLfo2 = false;
       }
@@ -412,6 +425,7 @@ void updateButtons() {
     isFreeRunning1 = !isFreeRunning1;
     isFreeRunning1Core2 = isFreeRunning1;
     if (isFreeRunning1) {
+      lfo.disableSync(0);
       // updatePots();
       Serial.println("free running1");
       flagFreq = true;
@@ -451,6 +465,7 @@ void updateButtons() {
   if (wave2.read() == LOW && btnWaveTime2 >= 1000 && btnWaveHold2) {
     isFreeRunning2 = !isFreeRunning2;
     isFreeRunning2Core2 = isFreeRunning2;
+    lfo.disableSync(1);
     if (isFreeRunning2) {
       flagFreq2 = true;
       Serial.println("free running2");
@@ -573,7 +588,7 @@ void loop() {
     // rp2040.fifo.push(counterTicksLoop);
 
     // interrupts();
-    Serial.println(counterTicksLoop);
+    // Serial.println(counterTicksLoop);
     if (counterTicksPulse < 400) {  //
       // Serial.println("disconnected");
       //  pulseConnected = false;
@@ -591,7 +606,8 @@ void loop() {
   }
   if (pulseConnected && counterTimeOut > timeOut) {
     pulseConnected = false;
-    lfo.disableSync();
+    lfo.disableSync(0);
+    lfo.disableSync(1);
     updateBpm();
   }
   if (lastPulseConnected != pulseConnected) {
@@ -600,6 +616,7 @@ void loop() {
       bpmCore2 = 0;
       flagBpm = true;
       // newBpm = true;
+      Serial.println("pulseConnected");
     }
     lastPulseConnected = pulseConnected;
   }

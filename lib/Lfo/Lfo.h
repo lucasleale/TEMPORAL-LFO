@@ -15,8 +15,8 @@ class Lfo {
   void setRatio(uint8_t lfoNum, float ratio);
   void resetPhase(uint8_t lfoNum);
   void setWave(uint8_t lfoNum, byte wave);
-  void enableSync();  // si recibe o no sync externo
-  void disableSync();
+  void enableSync(uint8_t lfoNum);  // si recibe o no sync externo
+  void disableSync(uint8_t lfoNum);
   void setTriggerPeriod(uint8_t lfoNum, uint16_t triggerPeriod);
   void setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity);
   void turnFreeRunning(uint8_t lfoNum, bool toggle);
@@ -31,7 +31,7 @@ class Lfo {
   uint32_t _ticksCycle;
   uint32_t _tableSizeFixedPoint;
   uint32_t _tableSize;
-  volatile bool _syncEnabled = false;
+  volatile bool _syncEnabled[2] = {false, false};
   volatile uint32_t _output[2];
   volatile uint8_t _waveSelector[2];
   volatile uint32_t _phaseInc[2];

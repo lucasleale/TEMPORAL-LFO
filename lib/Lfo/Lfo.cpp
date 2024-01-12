@@ -148,7 +148,7 @@ void Lfo::update() {
         }
       }*/
 
-      if (_randomFlag[lfoN] && !_syncEnabled) {  // random refresca valor en el momento del hardsync. Si esta en sync externo no genera aca.
+      if (_randomFlag[lfoN] && !_syncEnabled[lfoN]) {  // random refresca valor en el momento del hardsync. Si esta en sync externo no genera aca.
         _output[lfoN] = random(0, 4096);
         analogWrite(_lfoPins[lfoN], _output[lfoN] >> _rangeOutput);
       }
@@ -211,7 +211,7 @@ void Lfo::resetPhase(uint8_t lfoNum) {
   _phaseAccClockOut = 0;
   //}
   // interrupts();
-  if (_syncEnabled) {  // si recibe sync externo genera el random nuevo directamente en el reset. Ya que si no
+  if (_syncEnabled[lfoNum]) {  // si recibe sync externo genera el random nuevo directamente en el reset. Ya que si no
     // a veces genera un pico de glitch random porque genera un nuevo valor cuando resetea con clock, y otro si el acumulador resetea solo.
     if (_randomFlag[lfoNum]) {
       _output[lfoNum] = random(0, 4096);
@@ -219,11 +219,11 @@ void Lfo::resetPhase(uint8_t lfoNum) {
     }
   }
 }
-void Lfo::enableSync() {
-  _syncEnabled = true;
+void Lfo::enableSync(uint8_t lfoNum) {
+  _syncEnabled[lfoNum] = true;
 }
-void Lfo::disableSync() {
-  _syncEnabled = false;
+void Lfo::disableSync(uint8_t lfoNum) {
+  _syncEnabled[lfoNum] = false;
 }
 void Lfo::turnFreeRunning(uint8_t lfoNum, bool toggle) {
   if (lfoNum < 2) {
