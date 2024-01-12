@@ -34,7 +34,7 @@ void Lfo::update() {
       _triggerCounter[lfoN] = 0;
       digitalWrite(_syncPins[lfoN], _triggerOn[lfoN]);
     }
-    
+
     if (_triggerCounter[lfoN] > _triggerPeriod[lfoN]) {
       digitalWrite(_syncPins[lfoN], _triggerOff[lfoN]);
       _triggerCounter[lfoN] = 0;
@@ -82,16 +82,20 @@ void Lfo::update() {
       if (abs(_phaseAcc12b[0] - _phaseAcc12b[1]) <= 128) {  // este 128 hay que reemplazarlo por un valor que sea un ratio
         // entre ratio1 y ratio2. Mientras mas grande es la diferencia mas grande es el valor. x4 y 0.25 en 128 queda bien.
         //  1-lfoN invierte indice porque actua sobre el otro lfo
-
-        _phaseAcc[1 - lfoN] += _tableSizeFixedPoint;  // hard sync
+        if (_freeRunning[1 - lfoN] == false || _freeRunning[lfoN] == false) {
+          _phaseAcc[1 - lfoN] += _tableSizeFixedPoint;  // hard sync
+        }
         // en vez de resetear a 0 le sumamos para que supere _tablesizefix.
         // esto soluciona un error con el random
       }
+      if (_freeRunning[1 - lfoN] == false || _freeRunning[lfoN] == false) {
+        if (_lastRatio[1 - lfoN] != _ratio[1 - lfoN]) {  // if (phaseIncChange) {
+          _phaseAcc[1 - lfoN] = 0;                       // cycle mode force reset
 
-      if (_lastRatio[1 - lfoN] != _ratio[1 - lfoN]) {  // if (phaseIncChange) {
-        _phaseAcc[1 - lfoN] = 0;
-        _lastRatio[1 - lfoN] = _ratio[1 - lfoN];
+          _lastRatio[1 - lfoN] = _ratio[1 - lfoN];
+        }
       }
+
       if (_randomFlag[lfoN] && !_syncEnabled) {  // random refresca valor en el momento del hardsync. Si esta en sync externo no genera aca.
         _output[lfoN] = random(0, 4096);
         analogWrite(_lfoPins[lfoN], _output[lfoN] >> _rangeOutput);
@@ -103,7 +107,6 @@ void Lfo::update() {
         analogWrite(_lfoPins[lfoN], _output[lfoN] >> _rangeOutput);
       }
     }
-    
   }
   // analogWrite(_lfoPin1, _output[0]);
   // analogWrite(_lfoPin2, _output[1]);
@@ -116,13 +119,14 @@ void Lfo::setFreqHz(uint8_t lfoNum, float freq) {
 void Lfo::setPeriodMs(uint8_t lfoNum, float period) {
   // float freqFromPeriod = 1000. / period;
   // setFreqHz(freqFromPeriod);
-  _period = period;
+  _period[lfoNum] = period;
   _phaseInc[lfoNum] = _ticksCycle * (1000. / (period * _ratio[lfoNum]));
 }
 
 void Lfo::setRatio(uint8_t lfoNum, float ratio) {
   _ratio[lfoNum] = ratio;
-  _phaseInc[lfoNum] = _ticksCycle * (1000. / (_period * ratio));
+  _phaseAcc[lfoNum] = _phaseAcc[1 - lfoNum] / ratio;  // modo lock para que los sync no tiren retrigger. Divido porque accum es inversa de F
+  _phaseInc[lfoNum] = _ticksCycle * (1000. / (_period[lfoNum] * ratio));
 }
 
 void Lfo::setWave(uint8_t lfoNum, uint8_t wave) {
@@ -152,16 +156,29 @@ void Lfo::enableSync() {
 void Lfo::disableSync() {
   _syncEnabled = false;
 }
-void Lfo::syncOut(){
-  
+void Lfo::turnFreeRunning(uint8_t lfoNum, bool toggle) {
+  if (lfoNum < 2) {
+    _freeRunning[lfoNum] = toggle;
+  }
+  if(_freeRunning[lfoNum] == true){
+  _ratio[lfoNum] = 1;
+  }
+  else{
+    _phaseAcc[lfoNum] = _phaseAcc[1 - lfoNum] / _ratio[lfoNum]; //aca forzamos a que el lfo salte a donde deberia estar cuando vuelve
+    //a ratios para uqe no quede fuera de fase
+  }
+
 }
-void Lfo::setTriggerPeriod(uint8_t lfoNum, uint16_t triggerPeriod){
+
+void Lfo::syncOut() {
+}
+void Lfo::setTriggerPeriod(uint8_t lfoNum, uint16_t triggerPeriod) {
   _triggerPeriod[lfoNum] = triggerPeriod;
 }
 
-void Lfo::setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity){
-_triggerOn[lfoNum] = triggerPolarity;
-_triggerOff[lfoNum] = 1-triggerPolarity;
+void Lfo::setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity) {
+  _triggerOn[lfoNum] = triggerPolarity;
+  _triggerOff[lfoNum] = 1 - triggerPolarity;
 }
 /*
 Lfo::Lfo(volatile byte lfoPin, uint32_t sampleRate, uint32_t tableSize) {

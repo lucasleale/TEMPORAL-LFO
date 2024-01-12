@@ -18,6 +18,8 @@ class Lfo {
   void disableSync();
   void setTriggerPeriod(uint8_t lfoNum, uint16_t triggerPeriod);
   void setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity);
+  void turnFreeRunning(uint8_t lfoNum, bool toggle);
+  
   // void syncEnabled(uint8_t lfoNum);
  private:
   volatile uint8_t _lfoPin1;
@@ -38,7 +40,7 @@ class Lfo {
   volatile bool _randomFlag[2];
   volatile float _ratio[2] = {1, 1};
   volatile float _lastRatio[2] = {1, 1};
-  volatile float _period;
+  volatile float _period[2] = {1, 1};
   volatile uint16_t _bitshift;
   volatile uint16_t _range;
   volatile uint16_t _rangeOutput;
@@ -46,6 +48,7 @@ class Lfo {
   volatile uint32_t _triggerCounter[2];
   volatile bool _triggerOn[2] = {1, 1};
   volatile bool _triggerOff[2] = {0, 0};
+  volatile bool _freeRunning[2] = {0, 0};
   void computeWaveforms();
   void syncOut();
   
