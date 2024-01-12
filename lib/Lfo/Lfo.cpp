@@ -10,6 +10,7 @@ Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
   pinMode(lfoPin2, OUTPUT);
   pinMode(syncPin1, OUTPUT);
   pinMode(syncPin2, OUTPUT);
+  pinMode(_clockOutPin, OUTPUT);
   _lfoPin1 = lfoPin1;
   _lfoPin2 = lfoPin2;
   _syncPin1 = syncPin1;
@@ -28,16 +29,57 @@ Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
 }
 
 void Lfo::update() {
+
+  if (_phaseAccClockOut == 0) {
+    _triggerCounterClockOut = 0;
+    digitalWrite(_clockOutPin, HIGH);
+    _flagTriggerClockOut = true;
+  }
+  _phaseAccClockOut += _phaseIncClockOut;
+
+  if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
+    digitalWrite(_clockOutPin, LOW);
+    _triggerCounterClockOut = 0;
+    _flagTriggerClockOut = false;
+  }
+  _triggerCounterClockOut++;
+  if (_phaseAccClockOut > _tableSizeFixedPoint) {  // al final para hardsync y eso usamos como base el master clock out.
+    //////////CLOCKOUT
+    if (_freeRunning[0] == false) {
+      if (_lastRatio[0] != _ratio[0]) {  // if (phaseIncChange) {
+        _phaseAcc[0] = 0;                // cycle mode force reset
+
+        _lastRatio[0] = _ratio[0];
+      }
+    }
+    if (_freeRunning[1] == false) {
+      if (_lastRatio[1] != _ratio[1]) {  // if (phaseIncChange) {
+        _phaseAcc[1] = 0;                // cycle mode force reset
+
+        _lastRatio[1] = _ratio[1];
+      }
+    }
+    ///////////////////
+    _phaseAccClockOut = 0;
+  }
+
   for (int lfoN = 0; lfoN < 2; lfoN++) {
     /////SYNC OUT
     if (_phaseAcc[lfoN] == 0) {
       _triggerCounter[lfoN] = 0;
       digitalWrite(_syncPins[lfoN], _triggerOn[lfoN]);
+
+      _flagTrigger[lfoN] = true;
+      // Serial.print("trig on");
+      // Serial.println(random(0,100));
     }
 
-    if (_triggerCounter[lfoN] > _triggerPeriod[lfoN]) {
+    if ((_triggerCounter[lfoN] > _triggerPeriod[lfoN]) && _flagTrigger[lfoN]) {
       digitalWrite(_syncPins[lfoN], _triggerOff[lfoN]);
       _triggerCounter[lfoN] = 0;
+      _flagTrigger[lfoN] = false;
+      // Serial.print("trig off");
+      // Serial.println(random(0,100));
     }
     _triggerCounter[lfoN]++;
     /////////////
@@ -45,6 +87,8 @@ void Lfo::update() {
     /////incrementar acumulador segun freq (phaseInc) y ratio
     _phaseAcc[lfoN] += _phaseInc[lfoN];          //* _ratio[lfoN];
     _phaseAcc12b[lfoN] = _phaseAcc[lfoN] >> 17;  // >> 17 acorde a table size
+    //_phaseAccClockOut += _phaseIncClockOut;
+    //_phaseAccClockOut12b = _phaseAccClockOut >> 17;
 
     switch (_waveSelector[lfoN]) {  ////////////calculo formas de onda
       case 0:
@@ -82,19 +126,27 @@ void Lfo::update() {
       if (abs(_phaseAcc12b[0] - _phaseAcc12b[1]) <= 128) {  // este 128 hay que reemplazarlo por un valor que sea un ratio
         // entre ratio1 y ratio2. Mientras mas grande es la diferencia mas grande es el valor. x4 y 0.25 en 128 queda bien.
         //  1-lfoN invierte indice porque actua sobre el otro lfo
-        if (_freeRunning[1 - lfoN] == false || _freeRunning[lfoN] == false) {
-          _phaseAcc[1 - lfoN] += _tableSizeFixedPoint;  // hard sync
+        if (_freeRunning[1 - lfoN] == false || _freeRunning[lfoN] == false) {  // hardsync solo pasa cuando estan en subdivisiones.
+          _phaseAcc[1 - lfoN] += _tableSizeFixedPoint;                         // hard sync
         }
         // en vez de resetear a 0 le sumamos para que supere _tablesizefix.
         // esto soluciona un error con el random
       }
-      if (_freeRunning[1 - lfoN] == false || _freeRunning[lfoN] == false) {
+      //////////CLOCKOUT
+      /*if (abs(_phaseAcc12b[0] - _phaseAccClockOut12b) <= 128) {
+        if (_freeRunning[1 - lfoN] == false || _freeRunning[lfoN] == false) {  // hardsync solo pasa cuando estan en subdivisiones.
+          _phaseAccClockOut += _tableSizeFixedPoint;                           // hard sync
+        }
+      }
+      //////////////////*/
+      ////probando de sacar esto cuando caubmio ratio. Que el master sea el nuevo clock out?
+      /*if (_freeRunning[1 - lfoN] == false || _freeRunning[lfoN] == false) {
         if (_lastRatio[1 - lfoN] != _ratio[1 - lfoN]) {  // if (phaseIncChange) {
           _phaseAcc[1 - lfoN] = 0;                       // cycle mode force reset
 
           _lastRatio[1 - lfoN] = _ratio[1 - lfoN];
         }
-      }
+      }*/
 
       if (_randomFlag[lfoN] && !_syncEnabled) {  // random refresca valor en el momento del hardsync. Si esta en sync externo no genera aca.
         _output[lfoN] = random(0, 4096);
@@ -102,11 +154,22 @@ void Lfo::update() {
       }
       // Serial.println(_phaseAcc[lfoN]);
       _phaseAcc[lfoN] = 0;
+
     } else {
       if (!_randomFlag[lfoN]) {  // refrescar el lfo siempre menos en el momento del hardsync ya que glitchea en la tabla de ondas
         analogWrite(_lfoPins[lfoN], _output[lfoN] >> _rangeOutput);
       }
     }
+    /*if(_phaseAccClockOut > _tableSizeFixedPoint){
+      //////////CLOCKOUT
+      if (abs(_phaseAcc12b[0] - _phaseAccClockOut12b) <= 128) {
+        if (_freeRunning[1 - lfoN] == false || _freeRunning[lfoN] == false) {  // hardsync solo pasa cuando estan en subdivisiones.
+          _phaseAccClockOut += _tableSizeFixedPoint;                           // hard sync
+        }
+      }
+      ///////////////////
+      _phaseAccClockOut = 0;
+    }*/
   }
   // analogWrite(_lfoPin1, _output[0]);
   // analogWrite(_lfoPin2, _output[1]);
@@ -121,6 +184,7 @@ void Lfo::setPeriodMs(uint8_t lfoNum, float period) {
   // setFreqHz(freqFromPeriod);
   _period[lfoNum] = period;
   _phaseInc[lfoNum] = _ticksCycle * (1000. / (period * _ratio[lfoNum]));
+  _phaseIncClockOut = _ticksCycle * (1000. / period);  // clock sin ratio
 }
 
 void Lfo::setRatio(uint8_t lfoNum, float ratio) {
@@ -140,6 +204,7 @@ void Lfo::resetPhase(uint8_t lfoNum) {
   //_phaseAcc[lfoNum] += _tableSizeFixedPoint;  // si reseteamos en 0 no sucede el random.
   //} else {
   _phaseAcc[lfoNum] = 0;
+  _phaseAccClockOut = 0;
   //}
   // interrupts();
   if (_syncEnabled) {  // si recibe sync externo genera el random nuevo directamente en el reset. Ya que si no
@@ -160,14 +225,12 @@ void Lfo::turnFreeRunning(uint8_t lfoNum, bool toggle) {
   if (lfoNum < 2) {
     _freeRunning[lfoNum] = toggle;
   }
-  if(_freeRunning[lfoNum] == true){
-  _ratio[lfoNum] = 1;
+  if (_freeRunning[lfoNum] == true) {
+    _ratio[lfoNum] = 1;
+  } else {
+    _phaseAcc[lfoNum] = _phaseAcc[1 - lfoNum] / _ratio[lfoNum];  // aca forzamos a que el lfo salte a donde deberia estar cuando vuelve
+    // a ratios para uqe no quede fuera de fase
   }
-  else{
-    _phaseAcc[lfoNum] = _phaseAcc[1 - lfoNum] / _ratio[lfoNum]; //aca forzamos a que el lfo salte a donde deberia estar cuando vuelve
-    //a ratios para uqe no quede fuera de fase
-  }
-
 }
 
 void Lfo::syncOut() {

@@ -26,6 +26,7 @@ class Lfo {
   volatile uint8_t _lfoPin2;
   volatile uint8_t _syncPin1;
   volatile uint8_t _syncPin2;
+  volatile uint8_t _clockOutPin = 19;
   uint32_t _ticksCycle;
   uint32_t _tableSizeFixedPoint;
   uint32_t _tableSize;
@@ -34,6 +35,9 @@ class Lfo {
   volatile uint8_t _waveSelector[2];
   volatile uint32_t _phaseInc[2];
   volatile uint32_t _phaseAcc[2];
+  volatile uint32_t _phaseAccClockOut;
+  volatile uint32_t _phaseIncClockOut;
+  volatile uint16_t _phaseAccClockOut12b;
   volatile uint16_t _phaseAcc12b[2];
   volatile uint16_t _lfoPins[2];
   volatile uint16_t _syncPins[2];
@@ -44,11 +48,15 @@ class Lfo {
   volatile uint16_t _bitshift;
   volatile uint16_t _range;
   volatile uint16_t _rangeOutput;
-  volatile uint32_t _triggerPeriod[2] = {200, 200};
+  volatile uint32_t _triggerPeriod[2] = {200, 200}; //triggerperiod y counter se encargan del duty cycle. En samples del samplerate
   volatile uint32_t _triggerCounter[2];
+  volatile uint32_t _triggerCounterClockOut;
+  volatile uint32_t _triggerPeriodClockOut = 200;;
   volatile bool _triggerOn[2] = {1, 1};
   volatile bool _triggerOff[2] = {0, 0};
   volatile bool _freeRunning[2] = {0, 0};
+  volatile bool _flagTrigger[2] = {false, false}; 
+  volatile bool _flagTriggerClockOut;
   void computeWaveforms();
   void syncOut();
   

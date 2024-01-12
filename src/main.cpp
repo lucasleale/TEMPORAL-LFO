@@ -76,11 +76,11 @@ PioEncoder encoder(2);
 elapsedMillis btnWaveTime1;
 elapsedMillis btnWaveTime2;
 
-const float multipliers[] = {0.25, 0.5, 0.66666, 1., 1.5, 2., 3., 4.};
+const float multipliers[] = {4., 3., 2., 1.5, 1., 0.6666, 0.5, 0.25}; //era 0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4.
 const uint8_t numMultipliers = (sizeof(multipliers) / sizeof(byte*));
-const uint8_t multipliersSync[numMultipliers] = {4, 2, 6, 1, 2, 1, 1, 1};
-const char* multipliersOled[numMultipliers] = {"1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   "};
-
+const uint8_t multipliersSync[numMultipliers] = {1, 1, 1, 2, 1, 6, 2, 4}; //era 4,2,6,1,2,1,1,1
+const char* multipliersOled[numMultipliers] = {"1   ", "1/2*", "1/2 ", "1/4*", "1/4 ", "1/4t", "1/8 ", "1/16"};
+//era "1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   "
 const uint8_t oledX = 16;
 const float oledCycles = 2;
 const uint8_t oledWidth = oledX * oledCycles;
@@ -331,11 +331,15 @@ void updatePots() {
       lfo.setRatio(0, ratioLfo1);
     }
   }
-  periodFreeRunning1 = fscale(potMult1.getValue(), 0, 1023, 50000, 100, 10);
+  periodFreeRunning1 = fscale(potMult1.getValue(), 3, 1023, 10000, 100, 7);
+  
   periodFreeRunning1Core2 = periodFreeRunning1;
   if (isFreeRunning1) {
     if (potMult1.hasChanged()) {
       lfo.setPeriodMs(0, periodFreeRunning1);
+      Serial.print(potMult1.getValue());
+      Serial.print("   ");
+      Serial.println(periodFreeRunning1);
     }
   }
 
@@ -353,7 +357,7 @@ void updatePots() {
       lfo.setRatio(1, ratioLfo2);
     }
   }
-  periodFreeRunning2 = fscale(potMult2.getValue(), 0, 1023, 50000, 100, 10);
+  periodFreeRunning2 = fscale(potMult2.getValue(), 3, 1023, 10000, 100, 7);
   periodFreeRunning2Core2 = periodFreeRunning2;
   if (isFreeRunning2) {
     if (potMult2.hasChanged()) {
@@ -660,37 +664,37 @@ void loop1() {
     displayBpm(bpmCore2);
     lastBpmCore2 = bpmCore2;
   }
-
+  
   if (lastWaveSelector1Core2 != waveSelector1Core2) {
     displayWave(waveSelector1Core2, ROW1_WAVE);
-    // lastWaveSelector1Core2 = waveSelector1Core2;
+     lastWaveSelector1Core2 = waveSelector1Core2;
   }
 
   if (lastWaveSelector2Core2 != waveSelector2Core2) {
     displayWave(waveSelector2Core2, ROW2_WAVE);
-    // lastWaveSelector2Core2 = waveSelector2Core2;
+     lastWaveSelector2Core2 = waveSelector2Core2;
   }
 
   if (isFreeRunning1Core2) {
-    //if (lastPeriodFreeRunning1Core2 != periodFreeRunning1Core2) {
+    if (lastPeriodFreeRunning1Core2 != periodFreeRunning1Core2) {
       displayFreq(periodFreeRunning1Core2, ROW1_RATIO);
-      // lastPeriodFreeRunning1Core2 = periodFreeRunning1Core2;
-    //}
+       lastPeriodFreeRunning1Core2 = periodFreeRunning1Core2;
+    }
   } else {
-    //if (lastMultiplier1Core2 != multiplier1Core2) {
+    if (lastMultiplier1Core2 != multiplier1Core2) {
       displayRatio(multiplier1Core2, ROW1_RATIO);
-      // lastMultiplier1Core2 = multiplier1Core2;
-    //}
+       lastMultiplier1Core2 = multiplier1Core2;
+    }
   }
   if (isFreeRunning2Core2) {
-    //if (lastPeriodFreeRunning2Core2 != periodFreeRunning2Core2) {
+    if (lastPeriodFreeRunning2Core2 != periodFreeRunning2Core2) {
       displayFreq(periodFreeRunning2Core2, ROW2_RATIO);
-      // lastPeriodFreeRunning2Core2 = periodFreeRunning2Core2;
-    //}
+       lastPeriodFreeRunning2Core2 = periodFreeRunning2Core2;
+    }
   } else {
-    //if (lastMultiplier2Core2 != multiplier2Core2) {
+    if (lastMultiplier2Core2 != multiplier2Core2) {
       displayRatio(multiplier2Core2, ROW2_RATIO);
-      // lastMultiplier2Core2 = multiplier2Core2;
-    //}
+       lastMultiplier2Core2 = multiplier2Core2;
+    }
   }
 }
