@@ -76,11 +76,11 @@ PioEncoder encoder(2);
 elapsedMillis btnWaveTime1;
 elapsedMillis btnWaveTime2;
 
-const float multipliers[] = {4., 3., 2., 1.5, 1., 0.6666, 0.5, 0.25}; //era 0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4.
+const float multipliers[] = {4., 3., 2., 1.5, 1., 0.6666, 0.5, 0.25};  // era 0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4.
 const uint8_t numMultipliers = (sizeof(multipliers) / sizeof(byte*));
-const uint8_t multipliersSync[numMultipliers] = {1, 1, 1, 2, 1, 6, 2, 4}; //era 4,2,6,1,2,1,1,1
+const uint8_t multipliersSync[numMultipliers] = {1, 1, 1, 2, 1, 6, 2, 4};  // era 4,2,6,1,2,1,1,1
 const char* multipliersOled[numMultipliers] = {"1   ", "1/2*", "1/2 ", "1/4*", "1/4 ", "1/4t", "1/8 ", "1/16"};
-//era "1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   "
+// era "1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   "
 const uint8_t oledX = 16;
 const float oledCycles = 2;
 const uint8_t oledWidth = oledX * oledCycles;
@@ -149,6 +149,15 @@ bool isFreeRunning1Core2 = 0;
 bool isFreeRunning2Core2 = 0;
 int periodFreeRunning1;
 int periodFreeRunning2;
+
+/// para display
+bool flagBpm;
+bool flagRatio;
+bool flagRatio2;
+bool flagWave;
+bool flagWave2;
+bool flagFreq;
+bool flagFreq2;
 void syncPulse() {
   pulseConnected = true;
   counterTimeOut = 0;  // este es el watchdog, resetea a 0 en todos los pulsos
@@ -275,6 +284,7 @@ void updateBpm() {
     lfo.setPeriodMsClock(periodMs);
     // displayBpm(bpm);
     bpmCore2 = bpm;
+    flagBpm = true;
     // pushCore2 = true;
     tap.setBPM(bpm);  // para que el tap no salte a cualquier valor, que se vaya ajustando
   }
@@ -311,11 +321,10 @@ void updatePots() {
   potMult2.update();
   static int lastMultiplier1 = -1;
   static int lastMultiplier2 = -1;
-  
-  
+
   multiplier1 = map(potMult1.getValue(), 0, 1023, 0, numMultipliers);
   multiplier2 = map(potMult2.getValue(), 0, 1023, 0, numMultipliers);
-  
+
   // delay(20);
 
   if (multiplier1 != lastMultiplier1) {
@@ -324,20 +333,23 @@ void updatePots() {
     // oled.setCursor(36, 68);
     ratioLfo1 = multipliers[multiplier1];
     // multipliers1Core2 = multipliersOled[multiplier1];
-    multiplier1Core2 = multiplier1;
+
     multiplierSyncLfo1 = multipliersSync[multiplier1];
     // oled.print(multipliersOled[multiplier1]);
     // oled.display();
     if (!isFreeRunning1) {  // si no esta en freerunning es ratio
+      multiplier1Core2 = multiplier1;
+      flagRatio = true;
       lfo.setRatio(0, ratioLfo1);
     }
   }
   periodFreeRunning1 = fscale(potMult1.getValue(), 3, 1023, 1000, 100, 7);
-  
-  periodFreeRunning1Core2 = periodFreeRunning1;
+
   if (isFreeRunning1) {
     if (potMult1.hasChanged()) {
       lfo.setPeriodMs(0, periodFreeRunning1);
+      periodFreeRunning1Core2 = periodFreeRunning1;
+      flagFreq = true;
       Serial.print(potMult1.getValue());
       Serial.print("   ");
       Serial.println(periodFreeRunning1);
@@ -349,20 +361,25 @@ void updatePots() {
     // oled.setTextSize(1);
     // oled.setCursor(36, 92);
     // multipliers2Core2 = multipliersOled[multiplier2];
-    multiplier2Core2 = multiplier2;
+
     ratioLfo2 = multipliers[multiplier2];
+
     multiplierSyncLfo2 = multipliersSync[multiplier2];
     // oled.print(multipliersOled[multiplier2]);
     // oled.display();
     if (!isFreeRunning2) {  // si no esta en freerunning es ratio
+      multiplier2Core2 = multiplier2;
+      flagRatio2 = true;
       lfo.setRatio(1, ratioLfo2);
     }
   }
   periodFreeRunning2 = fscale(potMult2.getValue(), 3, 1023, 1000, 100, 7);
-  periodFreeRunning2Core2 = periodFreeRunning2;
+
   if (isFreeRunning2) {
     if (potMult2.hasChanged()) {
-      //periodFreeRunning2Core2 = periodFreeRunning2;
+      // periodFreeRunning2Core2 = periodFreeRunning2;
+      periodFreeRunning2Core2 = periodFreeRunning2;
+      flagFreq2 = true;
       Serial.println(periodFreeRunning2);
       lfo.setPeriodMs(1, periodFreeRunning2);
     }
@@ -379,6 +396,7 @@ void updateButtons() {
     Serial.println("wave");
     lfo.setWave(0, waveSelector1);
     waveSelector1Core2 = waveSelector1;
+    flagWave = true;
     // pushCore2 = true;
     //  displayWave(waveSelector1, ROW1_WAVE);
     waveSelector1++;
@@ -394,14 +412,19 @@ void updateButtons() {
     isFreeRunning1 = !isFreeRunning1;
     isFreeRunning1Core2 = isFreeRunning1;
     if (isFreeRunning1) {
-      //updatePots();
+      // updatePots();
       Serial.println("free running1");
+      flagFreq = true;
       lfo.turnFreeRunning(0, isFreeRunning1);
       lfo.setPeriodMs(0, periodFreeRunning1);
-      
 
     } else {
+      multiplier1 = map(potMult1.getValue(), 0, 1023, 0, numMultipliers);
+      ratioLfo1 = multipliers[multiplier1];
+      multiplier1Core2 = multiplier1;
+      multiplierSyncLfo1 = multipliersSync[multiplier1];
       Serial.println("wave1");
+      flagRatio = true;
       lfo.setPeriodMs(0, periodMs);
       lfo.setRatio(0, ratioLfo1);
       lfo.turnFreeRunning(0, isFreeRunning1);
@@ -412,6 +435,7 @@ void updateButtons() {
   if (wave2.rose() && btnWaveTime2 < 1000) {
     lfo.setWave(1, waveSelector2);
     waveSelector2Core2 = waveSelector2;
+    flagWave2 = true;
     // displayWave(waveSelector2, ROW2_WAVE);
     // pushCore2 = true;
     waveSelector2++;
@@ -428,12 +452,17 @@ void updateButtons() {
     isFreeRunning2 = !isFreeRunning2;
     isFreeRunning2Core2 = isFreeRunning2;
     if (isFreeRunning2) {
+      flagFreq2 = true;
       Serial.println("free running2");
       lfo.turnFreeRunning(1, isFreeRunning2);
       lfo.setPeriodMs(1, periodFreeRunning2);
-      
-      
+
     } else {
+      multiplier2 = map(potMult2.getValue(), 0, 1023, 0, numMultipliers);
+      ratioLfo2 = multipliers[multiplier2];
+      multiplierSyncLfo2 = multipliersSync[multiplier2];
+      multiplier2Core2 = multiplier2;
+      flagRatio2 = true;
       Serial.println("wave2");
       lfo.setPeriodMs(1, periodMs);
       lfo.setRatio(1, ratioLfo2);
@@ -454,16 +483,16 @@ void tapTempo() {
 
       lfo.resetPhase(0);
       lfo.resetPhase(1);
-      if(!isFreeRunning1){
-      lfo.setPeriodMs(0, periodMs);
-      
+      if (!isFreeRunning1) {
+        lfo.setPeriodMs(0, periodMs);
       }
-      if(!isFreeRunning2){
-      lfo.setPeriodMs(1, periodMs);
+      if (!isFreeRunning2) {
+        lfo.setPeriodMs(1, periodMs);
       }
       lfo.setPeriodMsClock(periodMs);
       bpm = msToBpm(periodMs);
       bpmCore2 = bpm;
+      flagBpm = true;
       // displayBpm(bpm);
     }
   }
@@ -569,6 +598,7 @@ void loop() {
     if (pulseConnected) {
       // displayBpm(0);  // 0 == ext clock
       bpmCore2 = 0;
+      flagBpm = true;
       // newBpm = true;
     }
     lastPulseConnected = pulseConnected;
@@ -597,6 +627,7 @@ void displayBpm(float bpm) {
     oled.print("EXT");
   }
   oled.display();
+  // flagBpm = false;
 }
 
 void displayRatio(int multiplier, byte row) {
@@ -604,6 +635,7 @@ void displayRatio(int multiplier, byte row) {
   oled.setCursor(36, row);
   oled.print(multipliersOled[multiplier]);
   oled.display();
+  // flagRatio = false;
 }
 
 void displayFreq(int period, byte row) {
@@ -635,6 +667,7 @@ void displayWave(byte wave, byte row) {
     oled.drawLine(0, row, oledWidth - 1, row, WHITE);
   }
   oled.display();
+  // flagWave = false;
 }
 void setup1() {
   Serial.begin(9600);
@@ -664,41 +697,68 @@ void loop1() {
   // uint32_t counterTicksPulseCore = rp2040.fifo.pop();
   // Serial.println(counterTicksPulseCore);
   // delay(20);
-  if (lastBpmCore2 != bpmCore2) {
+  // if (lastBpmCore2 != bpmCore2) {
+  if (flagBpm) {
     displayBpm(bpmCore2);
-    lastBpmCore2 = bpmCore2;
+    // lastBpmCore2 = bpmCore2;
+    flagBpm = false;
   }
-  
-  if (lastWaveSelector1Core2 != waveSelector1Core2) {
+  //}
+
+  // if (lastWaveSelector1Core2 != waveSelector1Core2) {
+  if (flagWave) {
     displayWave(waveSelector1Core2, ROW1_WAVE);
-     lastWaveSelector1Core2 = waveSelector1Core2;
-  }
+    lastWaveSelector1Core2 = waveSelector1Core2;
+    //}
 
-  if (lastWaveSelector2Core2 != waveSelector2Core2) {
+    // if (lastWaveSelector2Core2 != waveSelector2Core2) {
+
+    lastWaveSelector2Core2 = waveSelector2Core2;
+    flagWave = false;
+  }
+  if (flagWave2) {
     displayWave(waveSelector2Core2, ROW2_WAVE);
-     lastWaveSelector2Core2 = waveSelector2Core2;
+    flagWave2 = false;
   }
+  //}
 
-  if (isFreeRunning1Core2) {
-    if (lastPeriodFreeRunning1Core2 != periodFreeRunning1Core2) {
-      displayFreq(periodFreeRunning1Core2, ROW1_RATIO);
-       lastPeriodFreeRunning1Core2 = periodFreeRunning1Core2;
-    }
-  } else {
-    if (lastMultiplier1Core2 != multiplier1Core2) {
-      displayRatio(multiplier1Core2, ROW1_RATIO);
-       lastMultiplier1Core2 = multiplier1Core2;
-    }
+  // if (isFreeRunning1Core2) {
+  if (flagFreq) {
+    // if (lastPeriodFreeRunning1Core2 != periodFreeRunning1Core2) {
+    displayFreq(periodFreeRunning1Core2, ROW1_RATIO);
+    lastPeriodFreeRunning1Core2 = periodFreeRunning1Core2;
+
+    lastPeriodFreeRunning2Core2 = periodFreeRunning2Core2;
+    flagFreq = false;
   }
-  if (isFreeRunning2Core2) {
-    if (lastPeriodFreeRunning2Core2 != periodFreeRunning2Core2) {
-      displayFreq(periodFreeRunning2Core2, ROW2_RATIO);
-       lastPeriodFreeRunning2Core2 = periodFreeRunning2Core2;
-    }
-  } else {
-    if (lastMultiplier2Core2 != multiplier2Core2) {
-      displayRatio(multiplier2Core2, ROW2_RATIO);
-       lastMultiplier2Core2 = multiplier2Core2;
-    }
+  if (flagFreq2) {
+    displayFreq(periodFreeRunning2Core2, ROW2_RATIO);
+    flagFreq2 = false;
   }
+  //}
+  //} else {
+  // if (lastMultiplier1Core2 != multiplier1Core2) {
+  if (flagRatio) {
+    displayRatio(multiplier1Core2, ROW1_RATIO);
+
+    lastMultiplier2Core2 = multiplier2Core2;
+    lastMultiplier1Core2 = multiplier1Core2;
+    flagRatio = false;
+  }
+  if (flagRatio2) {
+    displayRatio(multiplier2Core2, ROW2_RATIO);
+    flagRatio2 = false;
+  }
+  //}
+  //}
+  // if (isFreeRunning2Core2) {
+  // if (lastPeriodFreeRunning2Core2 != periodFreeRunning2Core2) {
+
+  // }
+  //} else {
+  // if (lastMultiplier2Core2 != multiplier2Core2) {
+
+  //}
+  //}
+  // delay(10);
 }
