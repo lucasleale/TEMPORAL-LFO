@@ -48,7 +48,8 @@ class Lfo {
   volatile float _period[2] = {1, 1};
   volatile uint16_t _bitshift;
   volatile uint16_t _range;
-  volatile uint16_t _rangeOutput;
+  volatile uint16_t _rangeShift;
+  volatile uint8_t _ledShift;
   volatile uint32_t _triggerPeriod[2] = {200, 200}; //triggerperiod y counter se encargan del duty cycle. En samples del samplerate
   volatile uint32_t _triggerCounter[2];
   volatile uint32_t _triggerCounterClockOut;
