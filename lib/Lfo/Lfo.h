@@ -20,7 +20,7 @@ class Lfo {
   void setTriggerPeriod(uint8_t lfoNum, uint16_t triggerPeriod);
   void setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity);
   void turnFreeRunning(uint8_t lfoNum, bool toggle);
-  
+  int getLfoValues(uint8_t lfoNum);
   // void syncEnabled(uint8_t lfoNum);
  private:
   volatile uint8_t _lfoPin1;

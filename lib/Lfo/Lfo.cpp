@@ -23,7 +23,7 @@ Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
   _tableSizeFixedPoint = (_tableSize << 17);
   _ticksCycle = (float)((float)_tableSizeFixedPoint / float(sampleRate));
 
-  _rangeOutput = 12 - (log((range + 1)) / log(2));  // esto hay que mejorar despues, el 12 son 12 bit. Tengo que ajustar
+  _rangeShift = 12 - (log((range + 1)) / log(2));  // esto hay que mejorar despues, el 12 son 12 bit. Tengo que ajustar
   // los acumuladores y tabla de ondas para que sean de 16bit (65536) y ahi hacer esta comparacion para descartar
   // bits al final
 }
