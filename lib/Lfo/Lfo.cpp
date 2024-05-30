@@ -183,7 +183,7 @@ void Lfo::setPeriodMs(uint8_t lfoNum, float period) {
   // float freqFromPeriod = 1000. / period;
   // setFreqHz(freqFromPeriod);
   _period[lfoNum] = period;
-  _phaseInc[lfoNum] = _ticksCycle * (1000. / (period * _ratio[lfoNum]));
+  _phaseInc[lfoNum] = (_ticksCycle * (1000. / (period * _ratio[lfoNum])) * 1.004);
   
 }
 
@@ -194,7 +194,7 @@ void Lfo::setPeriodMsClock(float period){
 void Lfo::setRatio(uint8_t lfoNum, float ratio) {
   _ratio[lfoNum] = ratio;
   _phaseAcc[lfoNum] = _phaseAcc[1 - lfoNum] / ratio;  // modo lock para que los sync no tiren retrigger. Divido porque accum es inversa de F
-  _phaseInc[lfoNum] = _ticksCycle * (1000. / (_period[lfoNum] * ratio));
+  _phaseInc[lfoNum] = (_ticksCycle * (1000. / (_period[lfoNum] * ratio)) * 1.004);
 }
 
 void Lfo::setWave(uint8_t lfoNum, uint8_t wave) {

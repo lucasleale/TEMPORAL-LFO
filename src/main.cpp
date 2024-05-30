@@ -1,5 +1,6 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_I2CDevice.h>
+#include <Adafruit_NeoPixel.h>
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 #include <ArduinoTapTempo.h>
@@ -24,9 +25,10 @@
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
-
 #define SCREEN_ADDRESS 0x3C  // CHEQUEAR ADDRESS, PUEDE SER 0x3C o 0x3D
 
+#define LED_PIN 16
+#define NUM_LEDS 1
 #define BUILTIN_LED 25
 #define ALARM_NUM 1
 #define ALARM_IRQ TIMER_IRQ_1
@@ -56,10 +58,10 @@
 const uint16_t TRIGGER_PERIOD = 200;  // 200 ticks a 10khz * 0.1ms = 20ms
 
 const uint8_t NUM_WAVES = 7;
-const uint32_t SAMPLE_RATE = 10000;  // dejar fijo en 10khz o 4khz?
+const uint32_t SAMPLE_RATE = 4000;  // dejar fijo en 10khz o 4khz?
 const float SAMPLE_RATE_MS = 1000. / SAMPLE_RATE;
 const uint32_t TABLE_SIZE = 4096;                   // largo de tabla de ondas, tal vez lo incremente mas
-const uint32_t PWM_RANGE = 4095;                    // (2^n )- 1 //4095 para 12bit, 1023 para 10bit
+const uint32_t PWM_RANGE = 1023;                    // (2^n )- 1 //4095 para 12bit, 1023 para 10bit
 const uint32_t PWM_FREQ = F_CPU / (PWM_RANGE + 1);  // 61035Hz en 12bit, 244,140Hz en 10bit
 const float ALARM_PERIOD = 1000000. / SAMPLE_RATE;  // timer interrupt en microsegundos
 
@@ -67,6 +69,7 @@ Lfo lfo(LFO1_PIN, LFO2_PIN, SAMPLE_RATE, TABLE_SIZE, PWM_RANGE, SYNC1_OUT_PIN, S
 Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 ResponsiveAnalogRead potMult1(POT1_PIN, true);
 ResponsiveAnalogRead potMult2(POT2_PIN, true);
+Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 ArduinoTapTempo tap;
 Bounce wave1 = Bounce();
 Bounce wave2 = Bounce();
@@ -563,6 +566,9 @@ void setup() {
   potMult1.setSnapMultiplier(0.0001);
   potMult2.setActivityThreshold(32);
   potMult2.setSnapMultiplier(0.0001);
+  leds.begin();
+  leds.setPixelColor(0, leds.Color(255, 0, 0));
+  leds.show();
   updateButtons();
   updatePots();
   lfo.resetPhase(0);
@@ -575,6 +581,7 @@ void loop() {
   updateButtons();
   updateEncoderBpm();
   tapTempo();
+  
   if (gotNewPulse) {
     // Serial.print(ratioLfo1);
     // Serial.print("  ");
