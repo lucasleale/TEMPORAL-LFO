@@ -29,6 +29,7 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C  // CHEQUEAR ADDRESS, PUEDE SER 0x3C o 0x3D
 
+#define LED_REFRESH 33  // 1000/33 30fps
 #define LED_PIN 16
 #define NUM_LEDS 1
 #define BUILTIN_LED 25
