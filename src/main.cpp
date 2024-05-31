@@ -31,7 +31,7 @@
 
 #define COMPENSATION 1.  // para ajustar periodo
 #define LED_REFRESH 33      // 1000/33 30fps
-#define LED_BRIGHTNESS 0.5  // 0. a 1.
+#define LED_BRIGHTNESS 1  // 0. a 1.
 #define LED_CLOCK_IN 0
 #define LED_LFO1 1
 #define LED_LFO2 2
@@ -702,8 +702,8 @@ void updateLfoLeds() {
     ledsFps = 0;
     // leds.setPixelColor(5, leds.Color(random(256), 100, 30));
 
-    leds.setPixelColor(LED_LFO1, leds.Color(ledLfo1 * LED_BRIGHTNESS, 0, 0));
-    leds.setPixelColor(LED_LFO2, leds.Color(ledLfo2 * LED_BRIGHTNESS, 0, 0));
+    leds.setPixelColor(LED_LFO1, leds.Color(ledLfo1 * LED_BRIGHTNESS, ledLfo2 * 0.1, ledLfo2 * 0.2));
+    leds.setPixelColor(LED_LFO2, leds.Color(ledLfo2 * LED_BRIGHTNESS, ledLfo1 * 0.1, ledLfo1 * 0.2));
     leds.show();
   }
 }
