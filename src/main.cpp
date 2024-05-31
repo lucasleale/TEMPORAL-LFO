@@ -92,6 +92,7 @@ void tapTempo();
 void updateBpm();
 void updateEncoderBpm();
 void updateLfoLeds();
+void updateTempoLed();
 float msToBpm(float period);
 float bpmToMs(float bpm);
 void syncPulse();
@@ -197,7 +198,7 @@ void setup() {
   pinMode(TAP_JACK, INPUT_PULLUP);
   pinMode(SYNC1_OUT_PIN, OUTPUT);
   pinMode(SYNC2_OUT_PIN, OUTPUT);
-  pinMode(SYNC_IN_PIN, INPUT);
+  pinMode(SYNC_IN_PIN, INPUT_PULLUP);
   wave1.attach(BTN1_PIN, INPUT_PULLUP);
   wave2.attach(BTN2_PIN, INPUT_PULLUP);
   wave1.interval(25);
@@ -244,12 +245,15 @@ void setup() {
   updatePots();
   lfo.resetPhase(0);
   lfo.resetPhase(1);
+  lfo.resetPhaseMaster();
   // displayBpm(120.0);
 }
 void syncPulse() {
   pulseConnected = true;
-  counterTimeOut = 0;     // este es el watchdog, resetea a 0 en todos los pulsos
-  if (!isFreeRunning1) {  // el sync lo activa solo si no esta en free
+  lfo.resetPhaseMaster();  // reseteamos el master clock interno solo con los pulsos
+                           // antes el reset era igual que los lfos, entonces se triggeaba el clock out con cada syncout
+  counterTimeOut = 0;      // este es el watchdog, resetea a 0 en todos los pulsos
+  if (!isFreeRunning1) {   // el sync lo activa solo si no esta en free
     lfo.enableSync(0);
   }  // mover esto a otro lado...
   if (!isFreeRunning2) {
@@ -356,7 +360,7 @@ void loop() {
   updateEncoderBpm();
   tapTempo();
   updateLfoLeds();
-
+  updateTempoLed();
   if (gotNewPulse) {
     // Serial.print(ratioLfo1);
     // Serial.print("  ");
@@ -390,6 +394,9 @@ void loop() {
     pulseConnected = false;
     lfo.disableSync(0);
     lfo.disableSync(1);
+    lfo.resetPhase(0);
+    lfo.resetPhase(1);
+    lfo.resetPhaseMaster();
     updateBpm();
   }
   if (lastPulseConnected != pulseConnected) {
@@ -583,6 +590,7 @@ void tapTempo() {
 
       lfo.resetPhase(0);
       lfo.resetPhase(1);
+      lfo.resetPhaseMaster();
       if (!isFreeRunning1) {
         lfo.setPeriodMs(0, periodMs);
       }
@@ -648,7 +656,7 @@ void updateEncoderBpm() {
 }
 
 void updateLfoLeds() {
-  uint8_t ledLfo1 = lfo.getLfoValues(0); 
+  uint8_t ledLfo1 = lfo.getLfoValues(0);
   uint8_t ledLfo2 = lfo.getLfoValues(1);
   if (ledsFps > LED_REFRESH) {
     ledsFps = 0;
@@ -660,6 +668,20 @@ void updateLfoLeds() {
   }
 }
 
+void updateTempoLed() {
+  bool ledTempo = lfo.getClockOut();
+  static bool ledTempoLast;
+  if (ledTempo != ledTempoLast) {
+    if (pulseConnected) {
+      leds.setPixelColor(0, leds.Color(0, 255 * ledTempo, 0));
+    } else {
+      leds.setPixelColor(0, leds.Color(0, 0, 255 * ledTempo));
+    }
+    leds.show();
+    ledTempoLast = ledTempo;
+    // Serial.println(ledTempo);
+  }
+}
 //////CORE 2 PARA OLED Y NEOPIXEL
 void displayBpm(float bpm) {
   oled.setCursor(0, 8);

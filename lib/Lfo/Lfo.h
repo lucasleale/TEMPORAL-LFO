@@ -14,6 +14,7 @@ class Lfo {
   void setPeriodMsClock(float period); //el clock out tiene su propio periodo, si no, cuando esta en free running se cambia a algun lfo
   void setRatio(uint8_t lfoNum, float ratio);
   void resetPhase(uint8_t lfoNum);
+  void resetPhaseMaster();
   void setWave(uint8_t lfoNum, byte wave);
   void enableSync(uint8_t lfoNum);  // si recibe o no sync externo
   void disableSync(uint8_t lfoNum);
@@ -21,6 +22,7 @@ class Lfo {
   void setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity);
   void turnFreeRunning(uint8_t lfoNum, bool toggle);
   int getLfoValues(uint8_t lfoNum);
+  bool getClockOut();
   // void syncEnabled(uint8_t lfoNum);
  private:
   volatile uint8_t _lfoPin1;
@@ -54,6 +56,7 @@ class Lfo {
   volatile uint32_t _triggerCounter[2];
   volatile uint32_t _triggerCounterClockOut;
   volatile uint32_t _triggerPeriodClockOut = 200;;
+  volatile bool _clockOutValue;
   volatile bool _triggerOn[2] = {1, 1};
   volatile bool _triggerOff[2] = {0, 0};
   volatile bool _freeRunning[2] = {0, 0};

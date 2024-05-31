@@ -24,22 +24,26 @@ Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
   _ticksCycle = (float)((float)_tableSizeFixedPoint / float(sampleRate));
 
   _rangeShift = 12 - (log((range + 1)) / log(2));  // esto hay que mejorar despues, el 12 son 12 bit. Tengo que ajustar
-                                                    // los acumuladores y tabla de ondas para que sean de 16bit (65536) y ahi hacer esta comparacion para descartar
-                                                    // bits al final
+                                                   // los acumuladores y tabla de ondas para que sean de 16bit (65536) y ahi hacer esta comparacion para descartar
+                                                   // bits al final
   _ledShift = 4 - _rangeShift;                     // si range es 4095, rangeshift es 0 y shiftea 0, para los leds tiene que shift 4 (4-4)
-                                                    // si range es 1023, rangeshift es 2 y shiftea 2 para los leds, 4-2 = 2.
+                                                   // si range es 1023, rangeshift es 2 y shiftea 2 para los leds, 4-2 = 2.
 }
 
 void Lfo::update() {
   if (_phaseAccClockOut == 0) {
     _triggerCounterClockOut = 0;
     digitalWrite(_clockOutPin, HIGH);
+    _clockOutValue = HIGH;
     _flagTriggerClockOut = true;
+    Serial.print("trigger");
+    Serial.println(random(9));
   }
   _phaseAccClockOut += _phaseIncClockOut;
 
   if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
     digitalWrite(_clockOutPin, LOW);
+    _clockOutValue = LOW;
     _triggerCounterClockOut = 0;
     _flagTriggerClockOut = false;
   }
@@ -185,6 +189,10 @@ int Lfo::getLfoValues(uint8_t lfoNum) {
     return -1;
   }
 }
+
+bool Lfo::getClockOut() {
+  return _clockOutValue;
+}
 void Lfo::setFreqHz(uint8_t lfoNum, float freq) {
   _phaseInc[lfoNum] = _ticksCycle * freq;
 }
@@ -193,7 +201,7 @@ void Lfo::setPeriodMs(uint8_t lfoNum, float period) {
   // float freqFromPeriod = 1000. / period;
   // setFreqHz(freqFromPeriod);
   _period[lfoNum] = period;
-  _phaseInc[lfoNum] = (_ticksCycle * (1000. / (period * _ratio[lfoNum]))); //*1.004
+  _phaseInc[lfoNum] = (_ticksCycle * (1000. / (period * _ratio[lfoNum])));  //*1.004
 }
 
 void Lfo::setPeriodMsClock(float period) {
@@ -202,14 +210,18 @@ void Lfo::setPeriodMsClock(float period) {
 
 void Lfo::setRatio(uint8_t lfoNum, float ratio) {
   _ratio[lfoNum] = ratio;
-  _phaseAcc[lfoNum] = _phaseAcc[1 - lfoNum] / ratio;  // modo lock para que los sync no tiren retrigger. Divido porque accum es inversa de F
-  _phaseInc[lfoNum] = (_ticksCycle * (1000. / (_period[lfoNum] * ratio))); //*1.004
+  _phaseAcc[lfoNum] = _phaseAcc[1 - lfoNum] / ratio;                        // modo lock para que los sync no tiren retrigger. Divido porque accum es inversa de F
+  _phaseInc[lfoNum] = (_ticksCycle * (1000. / (_period[lfoNum] * ratio)));  //*1.004
 }
 
 void Lfo::setWave(uint8_t lfoNum, uint8_t wave) {
   _waveSelector[lfoNum] = wave;
 }
 
+void Lfo::resetPhaseMaster() {
+  _phaseAccClockOut = 0; //esto lo sacamos de resetPhase para que resetee separado del resetphase 
+                         //si no se triggeaba con cada reset de la subdivision
+}
 void Lfo::resetPhase(uint8_t lfoNum) {
   // noInterrupts();
 
@@ -217,7 +229,7 @@ void Lfo::resetPhase(uint8_t lfoNum) {
   //_phaseAcc[lfoNum] += _tableSizeFixedPoint;  // si reseteamos en 0 no sucede el random.
   //} else {
   _phaseAcc[lfoNum] = 0;
-  _phaseAccClockOut = 0;
+  //_phaseAccClockOut = 0;
   //}
   // interrupts();
   if (_syncEnabled[lfoNum]) {  // si recibe sync externo genera el random nuevo directamente en el reset. Ya que si no
