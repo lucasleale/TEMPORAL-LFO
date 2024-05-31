@@ -36,8 +36,7 @@ void Lfo::update() {
     digitalWrite(_clockOutPin, HIGH);
     _clockOutValue = HIGH;
     _flagTriggerClockOut = true;
-    Serial.print("trigger");
-    Serial.println(random(9));
+  
   }
   _phaseAccClockOut += _phaseIncClockOut;
 
