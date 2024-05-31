@@ -29,6 +29,7 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C  // CHEQUEAR ADDRESS, PUEDE SER 0x3C o 0x3D
 
+#define COMPENSATION 1.  // para ajustar periodo
 #define LED_REFRESH 33      // 1000/33 30fps
 #define LED_BRIGHTNESS 0.5  // 0. a 1.
 #define LED_CLOCK_IN 0
@@ -90,6 +91,7 @@ elapsedMillis btnWaveTime1;
 elapsedMillis btnWaveTime2;
 elapsedMillis ledsFps;
 elapsedMillis timeOutPin;  // cuanto tiempo estuvo HIGH
+elapsedMillis tapLed;      // duty
 // prototypes
 void updateButtons();
 void updatePots();
@@ -249,6 +251,7 @@ void setup() {
   lfo.resetPhase(0);
   lfo.resetPhase(1);
   lfo.resetPhaseMaster();
+  tap.setTotalTapValues(10);
   // displayBpm(120.0);
 }
 void syncPulse() {
@@ -452,10 +455,10 @@ void updatePots() {
   static int lastMultiplier1 = -1;
   static int lastMultiplier2 = -1;
 
-   multiplier1 = map(potMult1.getValue(), 0, 1023, 0, numMultipliers);
-  //multiplier1 = map(potMult1.getValue(), 1023, 0, 0, numMultipliers);  // potes estan invertidos en el hard
-   multiplier2 = map(potMult2.getValue(), 0, 1023, 0, numMultipliers);
-  //multiplier2 = map(potMult2.getValue(), 1023, 0, 0, numMultipliers);
+  multiplier1 = map(potMult1.getValue(), 0, 1023, 0, numMultipliers);
+  // multiplier1 = map(potMult1.getValue(), 1023, 0, 0, numMultipliers);  // potes estan invertidos en el hard
+  multiplier2 = map(potMult2.getValue(), 0, 1023, 0, numMultipliers);
+  // multiplier2 = map(potMult2.getValue(), 1023, 0, 0, numMultipliers);
   Serial.println(potMult1.getValue());
   // delay(20);
 
@@ -475,8 +478,8 @@ void updatePots() {
       lfo.setRatio(0, ratioLfo1);
     }
   }
-   periodFreeRunning1 = fscale(potMult1.getValue(), 3, 1023, 1000, 100, 7);
-  //periodFreeRunning1 = fscale(potMult1.getValue(), 1023, 3, 1000, 100, 7);
+  periodFreeRunning1 = fscale(potMult1.getValue(), 3, 1023, 1000, 100, 7);
+  // periodFreeRunning1 = fscale(potMult1.getValue(), 1023, 3, 1000, 100, 7);
   if (isFreeRunning1) {
     if (potMult1.hasChanged()) {
       lfo.setPeriodMs(0, periodFreeRunning1);
@@ -506,7 +509,7 @@ void updatePots() {
     }
   }
   periodFreeRunning2 = fscale(potMult2.getValue(), 3, 1023, 1000, 100, 7);
-  //periodFreeRunning2 = fscale(potMult2.getValue(), 1023, 3, 1000, 100, 7);
+  // periodFreeRunning2 = fscale(potMult2.getValue(), 1023, 3, 1000, 100, 7);
   if (isFreeRunning2) {
     if (potMult2.hasChanged()) {
       // periodFreeRunning2Core2 = periodFreeRunning2;
@@ -558,7 +561,7 @@ void updateButtons() {
       multiplierSyncLfo1 = multipliersSync[multiplier1];
       Serial.println("wave1");
       flagRatio = true;
-      lfo.setPeriodMs(0, periodMs);
+      lfo.setPeriodMs(0, periodMs * COMPENSATION);
       lfo.setRatio(0, ratioLfo1);
       lfo.turnFreeRunning(0, isFreeRunning1);
     }
@@ -598,7 +601,7 @@ void updateButtons() {
       multiplier2Core2 = multiplier2;
       flagRatio2 = true;
       Serial.println("wave2");
-      lfo.setPeriodMs(1, periodMs);
+      lfo.setPeriodMs(1, periodMs * COMPENSATION);
       lfo.setRatio(1, ratioLfo2);
       lfo.turnFreeRunning(1, isFreeRunning2);
     }
@@ -607,6 +610,7 @@ void updateButtons() {
 }
 
 void tapTempo() {
+  static bool flagTapLed;
   if (!pulseConnected) {
     tapBtn.update();
     tapState = tapBtn.read() ^ tapExt.read();  // deberia ser OR pero como es invertido usamos XOR.
@@ -618,17 +622,26 @@ void tapTempo() {
       lfo.resetPhase(0);
       lfo.resetPhase(1);
       lfo.resetPhaseMaster();
+
+      leds.setPixelColor(LED_CLOCK_IN, leds.Color(255 * LED_BRIGHTNESS, 0, 255 * LED_BRIGHTNESS));
+      tapLed = 0;
+      flagTapLed = true;
       if (!isFreeRunning1) {
-        lfo.setPeriodMs(0, periodMs);
+        lfo.setPeriodMs(0, periodMs * COMPENSATION);
       }
       if (!isFreeRunning2) {
-        lfo.setPeriodMs(1, periodMs);
+        lfo.setPeriodMs(1, periodMs * COMPENSATION);
       }
-      lfo.setPeriodMsClock(periodMs);
+      lfo.setPeriodMsClock(periodMs * COMPENSATION);
       bpm = msToBpm(periodMs);
       bpmCore2 = bpm;
       flagBpm = true;
       // displayBpm(bpm);
+    }
+    if (tapLed > 100 && flagTapLed) {
+      leds.setPixelColor(LED_CLOCK_IN, leds.Color(0, 0, 0));
+      tapLed = 0;
+      flagTapLed = false;
     }
   }
 }
@@ -645,9 +658,9 @@ float msToBpm(float period) {
 void updateBpm() {
   if (!pulseConnected) {
     periodMs = bpmToMs(bpm);
-    lfo.setPeriodMs(0, periodMs);
-    lfo.setPeriodMs(1, periodMs);
-    lfo.setPeriodMsClock(periodMs);
+    lfo.setPeriodMs(0, periodMs * COMPENSATION);
+    lfo.setPeriodMs(1, periodMs * COMPENSATION);
+    lfo.setPeriodMsClock(periodMs * COMPENSATION);
     // displayBpm(bpm);
     bpmCore2 = bpm;
     flagBpm = true;
