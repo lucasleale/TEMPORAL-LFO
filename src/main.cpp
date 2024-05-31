@@ -701,9 +701,10 @@ void updateLfoLeds() {
   if (ledsFps > LED_REFRESH) {
     ledsFps = 0;
     // leds.setPixelColor(5, leds.Color(random(256), 100, 30));
-
-    leds.setPixelColor(LED_LFO1, leds.Color(ledLfo1 * LED_BRIGHTNESS, ledLfo2 * 0.1, ledLfo2 * 0.2));
-    leds.setPixelColor(LED_LFO2, leds.Color(ledLfo2 * LED_BRIGHTNESS, ledLfo1 * 0.1, ledLfo1 * 0.2));
+leds.setPixelColor(LED_LFO1, leds.Color(ledLfo1 * LED_BRIGHTNESS, 0, 0));
+leds.setPixelColor(LED_LFO2, leds.Color(ledLfo2 * LED_BRIGHTNESS, 0, 0));
+    //leds.setPixelColor(LED_LFO1, leds.Color(ledLfo1 * LED_BRIGHTNESS, ledLfo2 * 0.1, ledLfo2 * 0.2));
+    //leds.setPixelColor(LED_LFO2, leds.Color(ledLfo2 * LED_BRIGHTNESS, ledLfo1 * 0.1, ledLfo1 * 0.2));
     leds.show();
   }
 }
