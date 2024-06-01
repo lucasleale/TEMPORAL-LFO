@@ -127,7 +127,9 @@ void Lfo::update() {
 
     ////////cuando pasa el tamanio de la tabla vuelve a 0, aca se calculan varias cosas por tema de hard sync
     if (_phaseAcc[lfoN] > _tableSizeFixedPoint) {
-      if (abs(_phaseAcc12b[0] - _phaseAcc12b[1]) <= 128) {  // este 128 hay que reemplazarlo por un valor que sea un ratio
+      //la comparacion del abs es por el error de calculo de la DDS. Si estan a ratios muy distantes se van a desfasar,
+      //con la comparacion chequeamos esa diferencia y si esta entre el margen de error, fuerza reset.
+      if (abs(_phaseAcc12b[0] - _phaseAcc12b[1]) <= 256) {  // este 128 hay que reemplazarlo por un valor que sea un ratio
         // entre ratio1 y ratio2. Mientras mas grande es la diferencia mas grande es el valor. x4 y 0.25 en 128 queda bien.
         //  1-lfoN invierte indice porque actua sobre el otro lfo
         if (_freeRunning[1 - lfoN] == false || _freeRunning[lfoN] == false) {  // hardsync solo pasa cuando estan en subdivisiones.

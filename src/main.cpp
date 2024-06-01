@@ -110,10 +110,10 @@ static void alarm_in_us_arm(uint32_t delay_us);
 static void alarm_irq(void);
 static void alarm_in_us(uint32_t delay_us);
 
-const float multipliers[] = {4., 3., 2., 1.5, 1., 0.6666, 0.5, 0.25};  // era 0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4.
+const float multipliers[] = {0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4., 8., 16.};  // era 0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4.
 const uint8_t numMultipliers = (sizeof(multipliers) / sizeof(byte*));
-const uint8_t multipliersSync[numMultipliers] = {1, 1, 1, 2, 1, 6, 2, 4};  // era 4,2,6,1,2,1,1,1
-const char* multipliersOled[numMultipliers] = {"1   ", "1/2*", "1/2 ", "1/4*", "1/4 ", "1/4t", "1/8 ", "1/16"};
+const uint8_t multipliersSync[numMultipliers] = {4, 2, 6, 1, 2, 1, 1, 1, 1, 1};  // era 4,2,6,1,2,1,1,1
+const char* multipliersOled[numMultipliers] = {"1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   ", "2   ", "4   "};
 // era "1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   "
 const uint8_t oledX = 16;
 const float oledCycles = 2;
@@ -478,7 +478,7 @@ void updatePots() {
       lfo.setRatio(0, ratioLfo1);
     }
   }
-  periodFreeRunning1 = fscale(potMult1.getValue(), 3, 1023, 1000, 100, 7);
+  periodFreeRunning1 = fscale(potMult1.getValue(), 0, 1023, 100, 1000, -5);
   // periodFreeRunning1 = fscale(potMult1.getValue(), 1023, 3, 1000, 100, 7);
   if (isFreeRunning1) {
     if (potMult1.hasChanged()) {
@@ -508,7 +508,7 @@ void updatePots() {
       lfo.setRatio(1, ratioLfo2);
     }
   }
-  periodFreeRunning2 = fscale(potMult2.getValue(), 3, 1023, 1000, 100, 7);
+  periodFreeRunning2 = fscale(potMult2.getValue(), 0, 1023, 100, 1000, -5);
   // periodFreeRunning2 = fscale(potMult2.getValue(), 1023, 3, 1000, 100, 7);
   if (isFreeRunning2) {
     if (potMult2.hasChanged()) {
