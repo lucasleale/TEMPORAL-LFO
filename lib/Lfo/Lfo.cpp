@@ -23,22 +23,26 @@ Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
   _tableSizeFixedPoint = (_tableSize << 17);
   _ticksCycle = (float)((float)_tableSizeFixedPoint / float(sampleRate));
 
-  _rangeOutput = 12 - (log((range + 1)) / log(2));  // esto hay que mejorar despues, el 12 son 12 bit. Tengo que ajustar
-  // los acumuladores y tabla de ondas para que sean de 16bit (65536) y ahi hacer esta comparacion para descartar
-  // bits al final
+  _rangeShift = 12 - (log((range + 1)) / log(2));  // esto hay que mejorar despues, el 12 son 12 bit. Tengo que ajustar
+                                                   // los acumuladores y tabla de ondas para que sean de 16bit (65536) y ahi hacer esta comparacion para descartar
+                                                   // bits al final
+  _ledShift = 4 - _rangeShift;                     // si range es 4095, rangeshift es 0 y shiftea 0, para los leds tiene que shift 4 (4-4)
+                                                   // si range es 1023, rangeshift es 2 y shiftea 2 para los leds, 4-2 = 2.
 }
 
 void Lfo::update() {
-
   if (_phaseAccClockOut == 0) {
     _triggerCounterClockOut = 0;
     digitalWrite(_clockOutPin, HIGH);
+    _clockOutValue = HIGH;
     _flagTriggerClockOut = true;
+  
   }
   _phaseAccClockOut += _phaseIncClockOut;
 
   if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
     digitalWrite(_clockOutPin, LOW);
+    _clockOutValue = LOW;
     _triggerCounterClockOut = 0;
     _flagTriggerClockOut = false;
   }
@@ -148,16 +152,16 @@ void Lfo::update() {
         }
       }*/
 
-      if (_randomFlag[lfoN] && !_syncEnabled) {  // random refresca valor en el momento del hardsync. Si esta en sync externo no genera aca.
+      if (_randomFlag[lfoN] && !_syncEnabled[lfoN]) {  // random refresca valor en el momento del hardsync. Si esta en sync externo no genera aca.
         _output[lfoN] = random(0, 4096);
-        analogWrite(_lfoPins[lfoN], _output[lfoN] >> _rangeOutput);
+        analogWrite(_lfoPins[lfoN], _output[lfoN] >> _rangeShift);
       }
       // Serial.println(_phaseAcc[lfoN]);
       _phaseAcc[lfoN] = 0;
 
     } else {
       if (!_randomFlag[lfoN]) {  // refrescar el lfo siempre menos en el momento del hardsync ya que glitchea en la tabla de ondas
-        analogWrite(_lfoPins[lfoN], _output[lfoN] >> _rangeOutput);
+        analogWrite(_lfoPins[lfoN], _output[lfoN] >> _rangeShift);
       }
     }
     /*if(_phaseAccClockOut > _tableSizeFixedPoint){
@@ -175,6 +179,19 @@ void Lfo::update() {
   // analogWrite(_lfoPin2, _output[1]);
 }
 
+int Lfo::getLfoValues(uint8_t lfoNum) {
+  if (lfoNum == 0) {
+    return (_output[0] >> _rangeShift) >> _ledShift;
+  } else if (lfoNum == 1) {
+    return (_output[1] >> _rangeShift) >> _ledShift;
+  } else {
+    return -1;
+  }
+}
+
+bool Lfo::getClockOut() {
+  return _clockOutValue;
+}
 void Lfo::setFreqHz(uint8_t lfoNum, float freq) {
   _phaseInc[lfoNum] = _ticksCycle * freq;
 }
@@ -183,24 +200,27 @@ void Lfo::setPeriodMs(uint8_t lfoNum, float period) {
   // float freqFromPeriod = 1000. / period;
   // setFreqHz(freqFromPeriod);
   _period[lfoNum] = period;
-  _phaseInc[lfoNum] = _ticksCycle * (1000. / (period * _ratio[lfoNum]));
-  
+  _phaseInc[lfoNum] = (_ticksCycle * (1000. / (period * _ratio[lfoNum])));  //*1.004
 }
 
-void Lfo::setPeriodMsClock(float period){
+void Lfo::setPeriodMsClock(float period) {
   _phaseIncClockOut = _ticksCycle * (1000. / period);  // clock sin ratio
 }
 
 void Lfo::setRatio(uint8_t lfoNum, float ratio) {
   _ratio[lfoNum] = ratio;
-  _phaseAcc[lfoNum] = _phaseAcc[1 - lfoNum] / ratio;  // modo lock para que los sync no tiren retrigger. Divido porque accum es inversa de F
-  _phaseInc[lfoNum] = _ticksCycle * (1000. / (_period[lfoNum] * ratio));
+  _phaseAcc[lfoNum] = _phaseAcc[1 - lfoNum] / ratio;                        // modo lock para que los sync no tiren retrigger. Divido porque accum es inversa de F
+  _phaseInc[lfoNum] = (_ticksCycle * (1000. / (_period[lfoNum] * ratio)));  //*1.004
 }
 
 void Lfo::setWave(uint8_t lfoNum, uint8_t wave) {
   _waveSelector[lfoNum] = wave;
 }
 
+void Lfo::resetPhaseMaster() {
+  _phaseAccClockOut = 0; //esto lo sacamos de resetPhase para que resetee separado del resetphase 
+                         //si no se triggeaba con cada reset de la subdivision
+}
 void Lfo::resetPhase(uint8_t lfoNum) {
   // noInterrupts();
 
@@ -208,22 +228,22 @@ void Lfo::resetPhase(uint8_t lfoNum) {
   //_phaseAcc[lfoNum] += _tableSizeFixedPoint;  // si reseteamos en 0 no sucede el random.
   //} else {
   _phaseAcc[lfoNum] = 0;
-  _phaseAccClockOut = 0;
+  //_phaseAccClockOut = 0;
   //}
   // interrupts();
-  if (_syncEnabled) {  // si recibe sync externo genera el random nuevo directamente en el reset. Ya que si no
+  if (_syncEnabled[lfoNum]) {  // si recibe sync externo genera el random nuevo directamente en el reset. Ya que si no
     // a veces genera un pico de glitch random porque genera un nuevo valor cuando resetea con clock, y otro si el acumulador resetea solo.
     if (_randomFlag[lfoNum]) {
       _output[lfoNum] = random(0, 4096);
-      analogWrite(_lfoPins[lfoNum], _output[lfoNum] >> _rangeOutput);
+      analogWrite(_lfoPins[lfoNum], _output[lfoNum] >> _rangeShift);
     }
   }
 }
-void Lfo::enableSync() {
-  _syncEnabled = true;
+void Lfo::enableSync(uint8_t lfoNum) {
+  _syncEnabled[lfoNum] = true;
 }
-void Lfo::disableSync() {
-  _syncEnabled = false;
+void Lfo::disableSync(uint8_t lfoNum) {
+  _syncEnabled[lfoNum] = false;
 }
 void Lfo::turnFreeRunning(uint8_t lfoNum, bool toggle) {
   if (lfoNum < 2) {

@@ -1,5 +1,8 @@
+// branch testdisplay
+
 #include <Adafruit_GFX.h>
 #include <Adafruit_I2CDevice.h>
+#include <Adafruit_NeoPixel.h>
 #include <Adafruit_SSD1306.h>
 #include <Arduino.h>
 #include <ArduinoTapTempo.h>
@@ -24,9 +27,18 @@
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET -1
-
 #define SCREEN_ADDRESS 0x3C  // CHEQUEAR ADDRESS, PUEDE SER 0x3C o 0x3D
 
+#define COMPENSATION 1.   // para ajustar periodo
+#define LED_REFRESH 33    // 1000/33 30fps
+#define LED_BRIGHTNESS 1  // 0. a 1.
+#define LED_CLOCK_IN 0
+#define LED_LFO1 1
+#define LED_LFO2 2
+#define LED_ENCODER1 4
+#define LED_ENCODER2 5
+#define LED_PIN 16
+#define NUM_LEDS 6
 #define BUILTIN_LED 25
 #define ALARM_NUM 1
 #define ALARM_IRQ TIMER_IRQ_1
@@ -43,7 +55,7 @@
 #define SYNC1_OUT_PIN 17
 #define SYNC2_OUT_PIN 18
 #define CLOCK_OUT_PIN 19
-#define SYNC_IN_PIN 26
+#define CLOCK_IN_PIN 26
 #define MAX_BPM 340
 #define MIN_BPM 40
 #define ROW1_WAVE 64  // coordenadas Y para el dibujo de formas de onda
@@ -56,10 +68,10 @@
 const uint16_t TRIGGER_PERIOD = 200;  // 200 ticks a 10khz * 0.1ms = 20ms
 
 const uint8_t NUM_WAVES = 7;
-const uint32_t SAMPLE_RATE = 10000;  // dejar fijo en 10khz o 4khz?
+const uint32_t SAMPLE_RATE = 4000;  // dejar fijo en 10khz o 4khz?
 const float SAMPLE_RATE_MS = 1000. / SAMPLE_RATE;
 const uint32_t TABLE_SIZE = 4096;                   // largo de tabla de ondas, tal vez lo incremente mas
-const uint32_t PWM_RANGE = 4095;                    // (2^n )- 1 //4095 para 12bit, 1023 para 10bit
+const uint32_t PWM_RANGE = 1023;                    // (2^n )- 1 //4095 para 12bit, 1023 para 10bit
 const uint32_t PWM_FREQ = F_CPU / (PWM_RANGE + 1);  // 61035Hz en 12bit, 244,140Hz en 10bit
 const float ALARM_PERIOD = 1000000. / SAMPLE_RATE;  // timer interrupt en microsegundos
 
@@ -67,20 +79,42 @@ Lfo lfo(LFO1_PIN, LFO2_PIN, SAMPLE_RATE, TABLE_SIZE, PWM_RANGE, SYNC1_OUT_PIN, S
 Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 ResponsiveAnalogRead potMult1(POT1_PIN, true);
 ResponsiveAnalogRead potMult2(POT2_PIN, true);
+Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 ArduinoTapTempo tap;
 Bounce wave1 = Bounce();
 Bounce wave2 = Bounce();
 Bounce tapBtn = Bounce();
 Bounce tapExt = Bounce();
+Bounce clockIn = Bounce();
 PioEncoder encoder(2);
 elapsedMillis btnWaveTime1;
 elapsedMillis btnWaveTime2;
+elapsedMillis ledsFps;
+elapsedMillis timeOutPin;  // cuanto tiempo estuvo HIGH
+elapsedMillis tapLed;      // duty
+// prototypes
+void updateButtons();
+void updatePots();
+void updateEncoderBpm();
+void tapTempo();
+void updateBpm();
+void updateEncoderBpm();
+void updateLfoLeds();
+void updateTempoLed();
+void resetAll();
+void clockInPullUp();
+float msToBpm(float period);
+float bpmToMs(float bpm);
+void syncPulse();
+static void alarm_in_us_arm(uint32_t delay_us);
+static void alarm_irq(void);
+static void alarm_in_us(uint32_t delay_us);
 
-const float multipliers[] = {4., 3., 2., 1.5, 1., 0.6666, 0.5, 0.25}; //era 0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4.
+const float multipliers[] = {4., 3., 2., 1.5, 1., 0.6666, 0.5, 0.25};  // era 0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4.
 const uint8_t numMultipliers = (sizeof(multipliers) / sizeof(byte*));
-const uint8_t multipliersSync[numMultipliers] = {1, 1, 1, 2, 1, 6, 2, 4}; //era 4,2,6,1,2,1,1,1
+const uint8_t multipliersSync[numMultipliers] = {1, 1, 1, 2, 1, 6, 2, 4};  // era 4,2,6,1,2,1,1,1
 const char* multipliersOled[numMultipliers] = {"1   ", "1/2*", "1/2 ", "1/4*", "1/4 ", "1/4t", "1/8 ", "1/16"};
-//era "1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   "
+// era "1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   "
 const uint8_t oledX = 16;
 const float oledCycles = 2;
 const uint8_t oledWidth = oledX * oledCycles;
@@ -149,10 +183,88 @@ bool isFreeRunning1Core2 = 0;
 bool isFreeRunning2Core2 = 0;
 int periodFreeRunning1;
 int periodFreeRunning2;
+
+/// para display
+bool flagBpm;
+bool flagRatio;
+bool flagRatio2;
+bool flagWave;
+bool flagWave2;
+bool flagFreq;
+bool flagFreq2;
+
+void setup() {
+  // Serial.begin(9600);
+  encoder.begin();
+  encoder.flip();
+  analogWriteFreq(PWM_FREQ);
+  analogWriteRange(PWM_RANGE);
+  pinMode(BUILTIN_LED, OUTPUT);
+  pinMode(ENC_PINA, INPUT_PULLUP);
+  pinMode(ENC_PINB, INPUT_PULLUP);
+  pinMode(LFO1_PIN, OUTPUT);
+  pinMode(LFO2_PIN, OUTPUT);
+  pinMode(TAP_PIN, INPUT_PULLUP);
+  pinMode(TAP_JACK, INPUT_PULLUP);
+  pinMode(SYNC1_OUT_PIN, OUTPUT);
+  pinMode(SYNC2_OUT_PIN, OUTPUT);
+  pinMode(CLOCK_IN_PIN, INPUT_PULLUP);
+  wave1.attach(BTN1_PIN, INPUT_PULLUP);
+  wave2.attach(BTN2_PIN, INPUT_PULLUP);
+  wave1.interval(25);
+  wave2.interval(25);
+  tapBtn.attach(TAP_PIN, INPUT_PULLUP);
+  tapBtn.interval(25);
+  tapExt.attach(TAP_JACK, INPUT_PULLUP);
+  tapExt.interval(25);
+  clockIn.attach(CLOCK_IN_PIN, INPUT_PULLUP);
+  clockIn.interval(25);
+  lfo.setTriggerPeriod(0, TRIGGER_PERIOD);
+  lfo.setTriggerPeriod(1, TRIGGER_PERIOD);
+  lfo.setPeriodMs(0, 500);
+  lfo.setPeriodMs(1, 500);
+  lfo.setPeriodMsClock(500);
+  lfo.setRatio(0, 1);
+  lfo.setRatio(1, 1);
+  lfo.setTriggerPolarity(0, POS);
+  lfo.setTriggerPolarity(1, POS);
+  alarm_in_us(ALARM_PERIOD);
+
+  attachInterrupt(digitalPinToInterrupt(CLOCK_IN_PIN), syncPulse, RISING);
+  // oled.setFont(&FreeSans9pt7b);
+  // oled.display();
+  // oled.clearDisplay();
+  // oled.setRotation(1);
+  // oled.setTextSize(1);
+  // oled.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
+
+  // displayWave(0, ROW2_WAVE);
+  // displayWave(0, ROW1_WAVE);
+  // oled.display();
+  potMult1.setActivityThreshold(32);
+  potMult1.setSnapMultiplier(0.0001);
+  potMult2.setActivityThreshold(32);
+  potMult2.setSnapMultiplier(0.0001);
+  leds.begin();
+  updateButtons();
+  updatePots();
+  lfo.resetPhase(0);
+  lfo.resetPhase(1);
+  lfo.resetPhaseMaster();
+  tap.setTotalTapValues(10);
+  // displayBpm(120.0);
+}
 void syncPulse() {
   pulseConnected = true;
-  counterTimeOut = 0;  // este es el watchdog, resetea a 0 en todos los pulsos
-  lfo.enableSync();
+  lfo.resetPhaseMaster();  // reseteamos el master clock interno solo con los pulsos
+                           // antes el reset era igual que los lfos, entonces se triggeaba el clock out con cada syncout
+  counterTimeOut = 0;      // este es el watchdog, resetea a 0 en todos los pulsos
+  if (!isFreeRunning1) {   // el sync lo activa solo si no esta en free
+    lfo.enableSync(0);
+  }  // mover esto a otro lado...
+  if (!isFreeRunning2) {
+    lfo.enableSync(1);
+  }
   // if(ratioLfo1 == 1){
   //   digitalWrite(SYNC1_OUT_PIN, HIGH); //thru
   //   counterDivTicksLfo1 = 0;
@@ -168,8 +280,12 @@ void syncPulse() {
       pulsePeriodMsLfo1 = counterTicksPulse * SAMPLE_RATE_MS;
       pulseTicksLfo2 = counterTicksPulse * ratioLfo2;
       // pulsePeriodMsLfo2 = counterTicksPulse * SAMPLE_RATE_MS; //en verdad solo necesito el pulseperiod de uno solo
-      lfo.setPeriodMs(0, pulsePeriodMsLfo1);
-      lfo.setPeriodMs(1, pulsePeriodMsLfo1);
+      if (!isFreeRunning1) {  // lo mismo aca con el free running
+        lfo.setPeriodMs(0, pulsePeriodMsLfo1);
+      }
+      if (!isFreeRunning2) {
+        lfo.setPeriodMs(1, pulsePeriodMsLfo1);
+      }
       lfo.setPeriodMsClock(periodMs);
 
       gotNewPulse = true;
@@ -200,13 +316,15 @@ static void alarm_irq(void) {
   hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
   alarm_in_us_arm(ALARM_PERIOD);
 
-  lfo.update();  // codigo lfo
+  lfo.update();
 
   if (pulseConnected) {
     if (counterDivTicksLfo1 % pulseTicksLfo1 == 0) {  // LFO1
       if (newTriggerLfo1) {
         // digitalWrite(SYNC1_OUT_PIN, HIGH);
-        lfo.resetPhase(0);
+        if (!isFreeRunning1) {
+          lfo.resetPhase(0);
+        }
         // lfo.resetPhase(1);
         newTriggerLfo1 = false;
       }
@@ -217,7 +335,9 @@ static void alarm_irq(void) {
     if (counterDivTicksLfo2 % pulseTicksLfo2 == 0) {  // LFO1
       if (newTriggerLfo2) {
         // digitalWrite(SYNC1_OUT_PIN, HIGH);
-        lfo.resetPhase(1);
+        if (!isFreeRunning2) {
+          lfo.resetPhase(1);
+        }
         // lfo.resetPhase(1);
         newTriggerLfo2 = false;
       }
@@ -240,20 +360,288 @@ static void alarm_in_us(uint32_t delay_us) {
   alarm_in_us_arm(delay_us);
 }
 //// FIN TIMER INTERRUPT PARA LFO ////
+void loop() {
+  updatePots();
+  updateButtons();
+  updateEncoderBpm();
+  tapTempo();
+  updateLfoLeds();
+  updateTempoLed();
 
-void encoderInterrupt() {
-  static uint8_t seqStore;
-  static uint8_t pinPair;
-  pinPair = (digitalRead(ENC_PINB) << 1) | digitalRead(ENC_PINA);
-  encoderValueISR = 0;
-  if ((seqStore & 0x3) != pinPair) {
-    seqStore = seqStore << 2;
-    seqStore |= pinPair;
-    if (seqStore == 0b10000111) {
-      encoderValueISR = -1;
+  clockInPullUp();
+  if (gotNewPulse) {
+    // Serial.print(ratioLfo1);
+    // Serial.print("  ");
+    // Serial.println(60000. /(counterTicksPulse * SAMPLE_RATE_MS));
+    // Serial.print(counterTicksPulse);
+    // Serial.print("  ");
+
+    // Serial.println(60000. / (counterTicksPulse * SAMPLE_RATE_MS));
+    // noInterrupts();
+    counterTicksLoop = counterTicksPulse;
+    // rp2040.fifo.push(counterTicksLoop);
+
+    // interrupts();
+    // Serial.println(counterTicksLoop);
+    if (counterTicksPulse < 400) {  //
+      // Serial.println("disconnected");
+      //  pulseConnected = false;
+      //  lfo.disableSync();
+      //  updateBpm();
     }
-    if (seqStore == 0b01001011) {
-      encoderValueISR = 1;
+    // displayBpm(msToBpm(pulsePeriodMsLfo1));
+
+    gotNewPulse = false;
+  }
+
+  if (lastGotNewPulse != gotNewPulse) {
+    updateBpm();
+
+    lastGotNewPulse = gotNewPulse;
+  }
+  if (pulseConnected && counterTimeOut > timeOut) {
+    resetAll();
+    pulseConnected = false;
+  }
+  if (lastPulseConnected != pulseConnected) {
+    if (pulseConnected) {
+      // displayBpm(0);  // 0 == ext clock
+      bpmCore2 = 0;
+      flagBpm = true;
+      // newBpm = true;
+      Serial.println("pulseConnected");
+    }
+    lastPulseConnected = pulseConnected;
+  }
+
+  // Serial.println(counterTimeOut);
+  // delay(100);
+  // Serial.println(counterTimeOut);
+  // encoder.reset();
+  // Serial.println(encoder.getCount() / 4);
+  // delay(10);
+  // rp2040.fifo.push(500);
+  // delay(30);
+
+  // delay(33);
+}
+
+void clockInPullUp() {
+  clockIn.update();
+  static bool flagTimeOut;
+  if (clockIn.rose() && flagTimeOut == false) {
+    timeOutPin = 0;
+    flagTimeOut = true;
+  }
+  if (clockIn.read() == HIGH && timeOutPin > 250 && flagTimeOut) {
+    flagTimeOut = false;
+
+    pulseConnected = false;
+    resetAll();
+  }
+}
+void resetAll() {
+  lfo.disableSync(0);
+  lfo.disableSync(1);
+  lfo.resetPhase(0);
+  lfo.resetPhase(1);
+  lfo.resetPhaseMaster();
+  updateBpm();
+  leds.setPixelColor(LED_CLOCK_IN, leds.Color(0, 0, 0));  // apaga led si no hay clock in
+}
+void updatePots() {
+  potMult1.update();
+  potMult2.update();
+  static int lastMultiplier1 = -1;
+  static int lastMultiplier2 = -1;
+
+  multiplier1 = map(potMult1.getValue(), 0, 1023, 0, numMultipliers);
+  // multiplier1 = map(potMult1.getValue(), 1023, 0, 0, numMultipliers);  // potes estan invertidos en el hard
+  multiplier2 = map(potMult2.getValue(), 0, 1023, 0, numMultipliers);
+  // multiplier2 = map(potMult2.getValue(), 1023, 0, 0, numMultipliers);
+  Serial.println(potMult1.getValue());
+  // delay(20);
+
+  if (multiplier1 != lastMultiplier1) {
+    lastMultiplier1 = multiplier1;
+    // oled.setTextSize(1);
+    // oled.setCursor(36, 68);
+    ratioLfo1 = multipliers[multiplier1];
+    // multipliers1Core2 = multipliersOled[multiplier1];
+
+    multiplierSyncLfo1 = multipliersSync[multiplier1];
+    // oled.print(multipliersOled[multiplier1]);
+    // oled.display();
+    if (!isFreeRunning1) {  // si no esta en freerunning es ratio
+      multiplier1Core2 = multiplier1;
+      flagRatio = true;
+      lfo.setRatio(0, ratioLfo1);
+    }
+  }
+  periodFreeRunning1 = fscale(potMult1.getValue(), 3, 1023, 1000, 100, 7);
+  // periodFreeRunning1 = fscale(potMult1.getValue(), 1023, 3, 1000, 100, 7);
+  if (isFreeRunning1) {
+    if (potMult1.hasChanged()) {
+      lfo.setPeriodMs(0, periodFreeRunning1);
+      periodFreeRunning1Core2 = periodFreeRunning1;
+      flagFreq = true;
+      Serial.print(potMult1.getValue());
+      Serial.print("   ");
+      Serial.println(periodFreeRunning1);
+    }
+  }
+
+  if (multiplier2 != lastMultiplier2) {
+    lastMultiplier2 = multiplier2;
+    // oled.setTextSize(1);
+    // oled.setCursor(36, 92);
+    // multipliers2Core2 = multipliersOled[multiplier2];
+
+    ratioLfo2 = multipliers[multiplier2];
+
+    multiplierSyncLfo2 = multipliersSync[multiplier2];
+    // oled.print(multipliersOled[multiplier2]);
+    // oled.display();
+    if (!isFreeRunning2) {  // si no esta en freerunning es ratio
+      multiplier2Core2 = multiplier2;
+      flagRatio2 = true;
+      lfo.setRatio(1, ratioLfo2);
+    }
+  }
+  periodFreeRunning2 = fscale(potMult2.getValue(), 3, 1023, 1000, 100, 7);
+  // periodFreeRunning2 = fscale(potMult2.getValue(), 1023, 3, 1000, 100, 7);
+  if (isFreeRunning2) {
+    if (potMult2.hasChanged()) {
+      // periodFreeRunning2Core2 = periodFreeRunning2;
+      periodFreeRunning2Core2 = periodFreeRunning2;
+      flagFreq2 = true;
+      Serial.println(periodFreeRunning2);
+      lfo.setPeriodMs(1, periodFreeRunning2);
+    }
+  }
+}
+
+void updateButtons() {
+  wave1.update();
+  wave2.update();
+  static uint8_t waveSelector1 = 1;
+  static uint8_t waveSelector2 = 1;
+
+  if (wave1.rose() && btnWaveTime1 < 1000) {
+    Serial.println("wave");
+    lfo.setWave(0, waveSelector1);
+    waveSelector1Core2 = waveSelector1;
+    flagWave = true;
+    // pushCore2 = true;
+    //  displayWave(waveSelector1, ROW1_WAVE);
+    waveSelector1++;
+    if (waveSelector1 == NUM_WAVES) {
+      waveSelector1 = 0;
+    }
+  }
+  if (wave1.fell()) {
+    btnWaveTime1 = 0;
+    btnWaveHold1 = true;
+  }
+  if (wave1.read() == LOW && btnWaveTime1 >= 1000 && btnWaveHold1) {
+    isFreeRunning1 = !isFreeRunning1;
+    isFreeRunning1Core2 = isFreeRunning1;
+    if (isFreeRunning1) {
+      lfo.disableSync(0);
+      // updatePots();
+      Serial.println("free running1");
+      flagFreq = true;
+      lfo.turnFreeRunning(0, isFreeRunning1);
+      lfo.setPeriodMs(0, periodFreeRunning1);
+
+    } else {
+      multiplier1 = map(potMult1.getValue(), 0, 1023, 0, numMultipliers);
+      ratioLfo1 = multipliers[multiplier1];
+      multiplier1Core2 = multiplier1;
+      multiplierSyncLfo1 = multipliersSync[multiplier1];
+      Serial.println("wave1");
+      flagRatio = true;
+      lfo.setPeriodMs(0, periodMs * COMPENSATION);
+      lfo.setRatio(0, ratioLfo1);
+      lfo.turnFreeRunning(0, isFreeRunning1);
+    }
+    btnWaveHold1 = false;
+  }
+
+  if (wave2.rose() && btnWaveTime2 < 1000) {
+    lfo.setWave(1, waveSelector2);
+    waveSelector2Core2 = waveSelector2;
+    flagWave2 = true;
+    // displayWave(waveSelector2, ROW2_WAVE);
+    // pushCore2 = true;
+    waveSelector2++;
+
+    if (waveSelector2 == NUM_WAVES) {
+      waveSelector2 = 0;
+    }
+  }
+  if (wave2.fell()) {
+    btnWaveTime2 = 0;
+    btnWaveHold2 = true;
+  }
+  if (wave2.read() == LOW && btnWaveTime2 >= 1000 && btnWaveHold2) {
+    isFreeRunning2 = !isFreeRunning2;
+    isFreeRunning2Core2 = isFreeRunning2;
+    lfo.disableSync(1);
+    if (isFreeRunning2) {
+      flagFreq2 = true;
+      Serial.println("free running2");
+      lfo.turnFreeRunning(1, isFreeRunning2);
+      lfo.setPeriodMs(1, periodFreeRunning2);
+
+    } else {
+      multiplier2 = map(potMult2.getValue(), 0, 1023, 0, numMultipliers);
+      ratioLfo2 = multipliers[multiplier2];
+      multiplierSyncLfo2 = multipliersSync[multiplier2];
+      multiplier2Core2 = multiplier2;
+      flagRatio2 = true;
+      Serial.println("wave2");
+      lfo.setPeriodMs(1, periodMs * COMPENSATION);
+      lfo.setRatio(1, ratioLfo2);
+      lfo.turnFreeRunning(1, isFreeRunning2);
+    }
+    btnWaveHold2 = false;
+  }
+}
+
+void tapTempo() {
+  static bool flagTapLed;
+  if (!pulseConnected) {
+    tapBtn.update();
+    tapState = tapBtn.read() ^ tapExt.read();  // deberia ser OR pero como es invertido usamos XOR.
+    tap.update(tapState);
+
+    if (tapBtn.fell() || tapExt.fell()) {
+      periodMs = tap.getBeatLength();
+
+      lfo.resetPhase(0);
+      lfo.resetPhase(1);
+      lfo.resetPhaseMaster();
+
+      leds.setPixelColor(LED_CLOCK_IN, leds.Color(255 * LED_BRIGHTNESS, 0, 255 * LED_BRIGHTNESS));
+      tapLed = 0;
+      flagTapLed = true;
+      if (!isFreeRunning1) {
+        lfo.setPeriodMs(0, periodMs * COMPENSATION);
+      }
+      if (!isFreeRunning2) {
+        lfo.setPeriodMs(1, periodMs * COMPENSATION);
+      }
+      lfo.setPeriodMsClock(periodMs * COMPENSATION);
+      bpm = msToBpm(periodMs);
+      bpmCore2 = bpm;
+      flagBpm = true;
+      // displayBpm(bpm);
+    }
+    if (tapLed > 100 && flagTapLed) {
+      leds.setPixelColor(LED_CLOCK_IN, leds.Color(0, 0, 0));
+      tapLed = 0;
+      flagTapLed = false;
     }
   }
 }
@@ -270,11 +658,12 @@ float msToBpm(float period) {
 void updateBpm() {
   if (!pulseConnected) {
     periodMs = bpmToMs(bpm);
-    lfo.setPeriodMs(0, periodMs);
-    lfo.setPeriodMs(1, periodMs);
-    lfo.setPeriodMsClock(periodMs);
+    lfo.setPeriodMs(0, periodMs * COMPENSATION);
+    lfo.setPeriodMs(1, periodMs * COMPENSATION);
+    lfo.setPeriodMsClock(periodMs * COMPENSATION);
     // displayBpm(bpm);
     bpmCore2 = bpm;
+    flagBpm = true;
     // pushCore2 = true;
     tap.setBPM(bpm);  // para que el tap no salte a cualquier valor, que se vaya ajustando
   }
@@ -306,286 +695,38 @@ void updateEncoderBpm() {
   }
 }
 
-void updatePots() {
-  potMult1.update();
-  potMult2.update();
-  static int lastMultiplier1 = -1;
-  static int lastMultiplier2 = -1;
-  
-  
-  multiplier1 = map(potMult1.getValue(), 0, 1023, 0, numMultipliers);
-  multiplier2 = map(potMult2.getValue(), 0, 1023, 0, numMultipliers);
-  
-  // delay(20);
-
-  if (multiplier1 != lastMultiplier1) {
-    lastMultiplier1 = multiplier1;
-    // oled.setTextSize(1);
-    // oled.setCursor(36, 68);
-    ratioLfo1 = multipliers[multiplier1];
-    // multipliers1Core2 = multipliersOled[multiplier1];
-    multiplier1Core2 = multiplier1;
-    multiplierSyncLfo1 = multipliersSync[multiplier1];
-    // oled.print(multipliersOled[multiplier1]);
-    // oled.display();
-    if (!isFreeRunning1) {  // si no esta en freerunning es ratio
-      lfo.setRatio(0, ratioLfo1);
-    }
-  }
-  periodFreeRunning1 = fscale(potMult1.getValue(), 3, 1023, 1000, 100, 7);
-  
-  periodFreeRunning1Core2 = periodFreeRunning1;
-  if (isFreeRunning1) {
-    if (potMult1.hasChanged()) {
-      lfo.setPeriodMs(0, periodFreeRunning1);
-      Serial.print(potMult1.getValue());
-      Serial.print("   ");
-      Serial.println(periodFreeRunning1);
-    }
-  }
-
-  if (multiplier2 != lastMultiplier2) {
-    lastMultiplier2 = multiplier2;
-    // oled.setTextSize(1);
-    // oled.setCursor(36, 92);
-    // multipliers2Core2 = multipliersOled[multiplier2];
-    multiplier2Core2 = multiplier2;
-    ratioLfo2 = multipliers[multiplier2];
-    multiplierSyncLfo2 = multipliersSync[multiplier2];
-    // oled.print(multipliersOled[multiplier2]);
-    // oled.display();
-    if (!isFreeRunning2) {  // si no esta en freerunning es ratio
-      lfo.setRatio(1, ratioLfo2);
-    }
-  }
-  periodFreeRunning2 = fscale(potMult2.getValue(), 3, 1023, 1000, 100, 7);
-  periodFreeRunning2Core2 = periodFreeRunning2;
-  if (isFreeRunning2) {
-    if (potMult2.hasChanged()) {
-      //periodFreeRunning2Core2 = periodFreeRunning2;
-      Serial.println(periodFreeRunning2);
-      lfo.setPeriodMs(1, periodFreeRunning2);
-    }
+void updateLfoLeds() {
+  uint8_t ledLfo1 = lfo.getLfoValues(0);
+  uint8_t ledLfo2 = lfo.getLfoValues(1);
+  if (ledsFps > LED_REFRESH) {
+    ledsFps = 0;
+    // leds.setPixelColor(5, leds.Color(random(256), 100, 30));
+    leds.setPixelColor(LED_LFO1, leds.Color(ledLfo1 * LED_BRIGHTNESS, 0, 0));
+    leds.setPixelColor(LED_LFO2, leds.Color(ledLfo2 * LED_BRIGHTNESS, 0, 0));
+    // leds.setPixelColor(LED_LFO1, leds.Color(ledLfo1 * LED_BRIGHTNESS, ledLfo2 * 0.1, ledLfo2 * 0.2));
+    // leds.setPixelColor(LED_LFO2, leds.Color(ledLfo2 * LED_BRIGHTNESS, ledLfo1 * 0.1, ledLfo1 * 0.2));
+    leds.show();
   }
 }
 
-void updateButtons() {
-  wave1.update();
-  wave2.update();
-  static uint8_t waveSelector1 = 1;
-  static uint8_t waveSelector2 = 1;
-
-  if (wave1.rose() && btnWaveTime1 < 1000) {
-    Serial.println("wave");
-    lfo.setWave(0, waveSelector1);
-    waveSelector1Core2 = waveSelector1;
-    // pushCore2 = true;
-    //  displayWave(waveSelector1, ROW1_WAVE);
-    waveSelector1++;
-    if (waveSelector1 == NUM_WAVES) {
-      waveSelector1 = 0;
-    }
-  }
-  if (wave1.fell()) {
-    btnWaveTime1 = 0;
-    btnWaveHold1 = true;
-  }
-  if (wave1.read() == LOW && btnWaveTime1 >= 1000 && btnWaveHold1) {
-    isFreeRunning1 = !isFreeRunning1;
-    isFreeRunning1Core2 = isFreeRunning1;
-    if (isFreeRunning1) {
-      //updatePots();
-      Serial.println("free running1");
-      lfo.turnFreeRunning(0, isFreeRunning1);
-      lfo.setPeriodMs(0, periodFreeRunning1);
-      
+void updateTempoLed() {
+  bool ledTempo = lfo.getClockOut();
+  static bool ledTempoLast;
+  if (ledTempo != ledTempoLast) {
+    if (pulseConnected) {  // esta en sync in parpadea leds encoder y led sync in
+      leds.setPixelColor(LED_CLOCK_IN, leds.Color(0, 255 * ledTempo * LED_BRIGHTNESS, 0));
+      leds.setPixelColor(LED_ENCODER1, leds.Color(0, 255 * ledTempo * LED_BRIGHTNESS, 0));
+      leds.setPixelColor(LED_ENCODER2, leds.Color(0, 255 * ledTempo * LED_BRIGHTNESS, 0));
 
     } else {
-      Serial.println("wave1");
-      lfo.setPeriodMs(0, periodMs);
-      lfo.setRatio(0, ratioLfo1);
-      lfo.turnFreeRunning(0, isFreeRunning1);
+      leds.setPixelColor(LED_ENCODER1, leds.Color(0, 0, 255 * ledTempo * LED_BRIGHTNESS));
+      leds.setPixelColor(LED_ENCODER2, leds.Color(0, 0, 255 * ledTempo * LED_BRIGHTNESS));
     }
-    btnWaveHold1 = false;
-  }
-
-  if (wave2.rose() && btnWaveTime2 < 1000) {
-    lfo.setWave(1, waveSelector2);
-    waveSelector2Core2 = waveSelector2;
-    // displayWave(waveSelector2, ROW2_WAVE);
-    // pushCore2 = true;
-    waveSelector2++;
-
-    if (waveSelector2 == NUM_WAVES) {
-      waveSelector2 = 0;
-    }
-  }
-  if (wave2.fell()) {
-    btnWaveTime2 = 0;
-    btnWaveHold2 = true;
-  }
-  if (wave2.read() == LOW && btnWaveTime2 >= 1000 && btnWaveHold2) {
-    isFreeRunning2 = !isFreeRunning2;
-    isFreeRunning2Core2 = isFreeRunning2;
-    if (isFreeRunning2) {
-      Serial.println("free running2");
-      lfo.turnFreeRunning(1, isFreeRunning2);
-      lfo.setPeriodMs(1, periodFreeRunning2);
-      
-      
-    } else {
-      Serial.println("wave2");
-      lfo.setPeriodMs(1, periodMs);
-      lfo.setRatio(1, ratioLfo2);
-      lfo.turnFreeRunning(1, isFreeRunning2);
-    }
-    btnWaveHold2 = false;
+    leds.show();
+    ledTempoLast = ledTempo;
+    // Serial.println(ledTempo);
   }
 }
-
-void tapTempo() {
-  if (!pulseConnected) {
-    tapBtn.update();
-    tapState = tapBtn.read() ^ tapExt.read();  // deberia ser OR pero como es invertido usamos XOR.
-    tap.update(tapState);
-
-    if (tapBtn.fell() || tapExt.fell()) {
-      periodMs = tap.getBeatLength();
-
-      lfo.resetPhase(0);
-      lfo.resetPhase(1);
-      if(!isFreeRunning1){
-      lfo.setPeriodMs(0, periodMs);
-      
-      }
-      if(!isFreeRunning2){
-      lfo.setPeriodMs(1, periodMs);
-      }
-      lfo.setPeriodMsClock(periodMs);
-      bpm = msToBpm(periodMs);
-      bpmCore2 = bpm;
-      // displayBpm(bpm);
-    }
-  }
-}
-
-void setup() {
-  // Serial.begin(9600);
-  encoder.begin();
-  encoder.flip();
-  analogWriteFreq(PWM_FREQ);
-  analogWriteRange(PWM_RANGE);
-  pinMode(BUILTIN_LED, OUTPUT);
-  pinMode(ENC_PINA, INPUT_PULLUP);
-  pinMode(ENC_PINB, INPUT_PULLUP);
-  pinMode(LFO1_PIN, OUTPUT);
-  pinMode(LFO2_PIN, OUTPUT);
-  pinMode(TAP_PIN, INPUT_PULLUP);
-  pinMode(TAP_JACK, INPUT_PULLUP);
-  pinMode(SYNC1_OUT_PIN, OUTPUT);
-  pinMode(SYNC2_OUT_PIN, OUTPUT);
-  pinMode(SYNC_IN_PIN, INPUT_PULLUP);
-  wave1.attach(BTN1_PIN, INPUT_PULLUP);
-  wave2.attach(BTN2_PIN, INPUT_PULLUP);
-  wave1.interval(25);
-  wave2.interval(25);
-  tapBtn.attach(TAP_PIN, INPUT_PULLUP);
-  tapBtn.interval(25);
-  tapExt.attach(TAP_JACK, INPUT_PULLUP);
-  tapExt.interval(25);
-  lfo.setTriggerPeriod(0, TRIGGER_PERIOD);
-  lfo.setTriggerPeriod(1, TRIGGER_PERIOD);
-  lfo.setPeriodMs(0, 500);
-  lfo.setPeriodMs(1, 500);
-  lfo.setPeriodMsClock(500);
-  lfo.setRatio(0, 1);
-  lfo.setRatio(1, 1);
-  lfo.setTriggerPolarity(0, POS);
-  lfo.setTriggerPolarity(1, POS);
-  alarm_in_us(ALARM_PERIOD);
-
-  attachInterrupt(digitalPinToInterrupt(SYNC_IN_PIN), syncPulse, RISING);
-  // oled.setFont(&FreeSans9pt7b);
-  // oled.display();
-  // oled.clearDisplay();
-  // oled.setRotation(1);
-  // oled.setTextSize(1);
-  // oled.setTextColor(SSD1306_WHITE, SSD1306_BLACK);
-
-  // displayWave(0, ROW2_WAVE);
-  // displayWave(0, ROW1_WAVE);
-  // oled.display();
-  potMult1.setActivityThreshold(32);
-  potMult1.setSnapMultiplier(0.0001);
-  potMult2.setActivityThreshold(32);
-  potMult2.setSnapMultiplier(0.0001);
-  updateButtons();
-  updatePots();
-  lfo.resetPhase(0);
-  lfo.resetPhase(1);
-  // displayBpm(120.0);
-}
-
-void loop() {
-  updatePots();
-  updateButtons();
-  updateEncoderBpm();
-  tapTempo();
-  if (gotNewPulse) {
-    // Serial.print(ratioLfo1);
-    // Serial.print("  ");
-    // Serial.println(60000. /(counterTicksPulse * SAMPLE_RATE_MS));
-    // Serial.print(counterTicksPulse);
-    // Serial.print("  ");
-
-    // Serial.println(60000. / (counterTicksPulse * SAMPLE_RATE_MS));
-    // noInterrupts();
-    counterTicksLoop = counterTicksPulse;
-    // rp2040.fifo.push(counterTicksLoop);
-
-    // interrupts();
-    Serial.println(counterTicksLoop);
-    if (counterTicksPulse < 400) {  //
-      // Serial.println("disconnected");
-      //  pulseConnected = false;
-      //  lfo.disableSync();
-      //  updateBpm();
-    }
-    // displayBpm(msToBpm(pulsePeriodMsLfo1));
-
-    gotNewPulse = false;
-  }
-  if (lastGotNewPulse != gotNewPulse) {
-    updateBpm();
-
-    lastGotNewPulse = gotNewPulse;
-  }
-  if (pulseConnected && counterTimeOut > timeOut) {
-    pulseConnected = false;
-    lfo.disableSync();
-    updateBpm();
-  }
-  if (lastPulseConnected != pulseConnected) {
-    if (pulseConnected) {
-      // displayBpm(0);  // 0 == ext clock
-      bpmCore2 = 0;
-      // newBpm = true;
-    }
-    lastPulseConnected = pulseConnected;
-  }
-
-  // Serial.println(counterTimeOut);
-  // delay(100);
-  // Serial.println(counterTimeOut);
-  // encoder.reset();
-  // Serial.println(encoder.getCount() / 4);
-  // delay(10);
-  // rp2040.fifo.push(500);
-  // delay(30);
-
-  // delay(33);
-}
-
 //////CORE 2 PARA OLED Y NEOPIXEL
 void displayBpm(float bpm) {
   oled.setCursor(0, 8);
@@ -597,6 +738,7 @@ void displayBpm(float bpm) {
     oled.print("EXT");
   }
   oled.display();
+  // flagBpm = false;
 }
 
 void displayRatio(int multiplier, byte row) {
@@ -604,6 +746,7 @@ void displayRatio(int multiplier, byte row) {
   oled.setCursor(36, row);
   oled.print(multipliersOled[multiplier]);
   oled.display();
+  // flagRatio = false;
 }
 
 void displayFreq(int period, byte row) {
@@ -635,6 +778,7 @@ void displayWave(byte wave, byte row) {
     oled.drawLine(0, row, oledWidth - 1, row, WHITE);
   }
   oled.display();
+  // flagWave = false;
 }
 void setup1() {
   Serial.begin(9600);
@@ -664,41 +808,68 @@ void loop1() {
   // uint32_t counterTicksPulseCore = rp2040.fifo.pop();
   // Serial.println(counterTicksPulseCore);
   // delay(20);
-  if (lastBpmCore2 != bpmCore2) {
+  // if (lastBpmCore2 != bpmCore2) {
+  if (flagBpm) {
     displayBpm(bpmCore2);
-    lastBpmCore2 = bpmCore2;
+    // lastBpmCore2 = bpmCore2;
+    flagBpm = false;
   }
-  
-  if (lastWaveSelector1Core2 != waveSelector1Core2) {
+  //}
+
+  // if (lastWaveSelector1Core2 != waveSelector1Core2) {
+  if (flagWave) {
     displayWave(waveSelector1Core2, ROW1_WAVE);
-     lastWaveSelector1Core2 = waveSelector1Core2;
-  }
+    lastWaveSelector1Core2 = waveSelector1Core2;
+    //}
 
-  if (lastWaveSelector2Core2 != waveSelector2Core2) {
+    // if (lastWaveSelector2Core2 != waveSelector2Core2) {
+
+    lastWaveSelector2Core2 = waveSelector2Core2;
+    flagWave = false;
+  }
+  if (flagWave2) {
     displayWave(waveSelector2Core2, ROW2_WAVE);
-     lastWaveSelector2Core2 = waveSelector2Core2;
+    flagWave2 = false;
   }
+  //}
 
-  if (isFreeRunning1Core2) {
-    if (lastPeriodFreeRunning1Core2 != periodFreeRunning1Core2) {
-      displayFreq(periodFreeRunning1Core2, ROW1_RATIO);
-       lastPeriodFreeRunning1Core2 = periodFreeRunning1Core2;
-    }
-  } else {
-    if (lastMultiplier1Core2 != multiplier1Core2) {
-      displayRatio(multiplier1Core2, ROW1_RATIO);
-       lastMultiplier1Core2 = multiplier1Core2;
-    }
+  // if (isFreeRunning1Core2) {
+  if (flagFreq) {
+    // if (lastPeriodFreeRunning1Core2 != periodFreeRunning1Core2) {
+    displayFreq(periodFreeRunning1Core2, ROW1_RATIO);
+    lastPeriodFreeRunning1Core2 = periodFreeRunning1Core2;
+
+    lastPeriodFreeRunning2Core2 = periodFreeRunning2Core2;
+    flagFreq = false;
   }
-  if (isFreeRunning2Core2) {
-    if (lastPeriodFreeRunning2Core2 != periodFreeRunning2Core2) {
-      displayFreq(periodFreeRunning2Core2, ROW2_RATIO);
-       lastPeriodFreeRunning2Core2 = periodFreeRunning2Core2;
-    }
-  } else {
-    if (lastMultiplier2Core2 != multiplier2Core2) {
-      displayRatio(multiplier2Core2, ROW2_RATIO);
-       lastMultiplier2Core2 = multiplier2Core2;
-    }
+  if (flagFreq2) {
+    displayFreq(periodFreeRunning2Core2, ROW2_RATIO);
+    flagFreq2 = false;
   }
+  //}
+  //} else {
+  // if (lastMultiplier1Core2 != multiplier1Core2) {
+  if (flagRatio) {
+    displayRatio(multiplier1Core2, ROW1_RATIO);
+
+    lastMultiplier2Core2 = multiplier2Core2;
+    lastMultiplier1Core2 = multiplier1Core2;
+    flagRatio = false;
+  }
+  if (flagRatio2) {
+    displayRatio(multiplier2Core2, ROW2_RATIO);
+    flagRatio2 = false;
+  }
+  //}
+  //}
+  // if (isFreeRunning2Core2) {
+  // if (lastPeriodFreeRunning2Core2 != periodFreeRunning2Core2) {
+
+  // }
+  //} else {
+  // if (lastMultiplier2Core2 != multiplier2Core2) {
+
+  //}
+  //}
+  // delay(10);
 }

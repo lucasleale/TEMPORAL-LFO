@@ -14,13 +14,15 @@ class Lfo {
   void setPeriodMsClock(float period); //el clock out tiene su propio periodo, si no, cuando esta en free running se cambia a algun lfo
   void setRatio(uint8_t lfoNum, float ratio);
   void resetPhase(uint8_t lfoNum);
+  void resetPhaseMaster();
   void setWave(uint8_t lfoNum, byte wave);
-  void enableSync();  // si recibe o no sync externo
-  void disableSync();
+  void enableSync(uint8_t lfoNum);  // si recibe o no sync externo
+  void disableSync(uint8_t lfoNum);
   void setTriggerPeriod(uint8_t lfoNum, uint16_t triggerPeriod);
   void setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity);
   void turnFreeRunning(uint8_t lfoNum, bool toggle);
-  
+  int getLfoValues(uint8_t lfoNum);
+  bool getClockOut();
   // void syncEnabled(uint8_t lfoNum);
  private:
   volatile uint8_t _lfoPin1;
@@ -31,7 +33,7 @@ class Lfo {
   uint32_t _ticksCycle;
   uint32_t _tableSizeFixedPoint;
   uint32_t _tableSize;
-  volatile bool _syncEnabled = false;
+  volatile bool _syncEnabled[2] = {false, false};
   volatile uint32_t _output[2];
   volatile uint8_t _waveSelector[2];
   volatile uint32_t _phaseInc[2];
@@ -48,11 +50,13 @@ class Lfo {
   volatile float _period[2] = {1, 1};
   volatile uint16_t _bitshift;
   volatile uint16_t _range;
-  volatile uint16_t _rangeOutput;
+  volatile uint16_t _rangeShift;
+  volatile uint8_t _ledShift;
   volatile uint32_t _triggerPeriod[2] = {200, 200}; //triggerperiod y counter se encargan del duty cycle. En samples del samplerate
   volatile uint32_t _triggerCounter[2];
   volatile uint32_t _triggerCounterClockOut;
   volatile uint32_t _triggerPeriodClockOut = 200;;
+  volatile bool _clockOutValue;
   volatile bool _triggerOn[2] = {1, 1};
   volatile bool _triggerOff[2] = {0, 0};
   volatile bool _freeRunning[2] = {0, 0};
