@@ -50,17 +50,17 @@ void Lfo::update() {
   if (_phaseAccClockOut > _tableSizeFixedPoint) {  // al final para hardsync y eso usamos como base el master clock out.
     //////////CLOCKOUT
     if (_freeRunning[0] == false) {
-      if (_lastRatio[0] != _ratio[0]) {  // if (phaseIncChange) {
-        _phaseAcc[0] = 0;                // cycle mode force reset
+      if (_lastRatio[0] != _ratio[0]) {  // if (phaseIncChange) { //mmm para el cambio de ratio y lock no funciona bien aca
+        //_phaseAcc[0] = 0;                // cycle mode force reset
 
-        _lastRatio[0] = _ratio[0];
+        //_lastRatio[0] = _ratio[0]; 
       }
     }
     if (_freeRunning[1] == false) {
       if (_lastRatio[1] != _ratio[1]) {  // if (phaseIncChange) {
-        _phaseAcc[1] = 0;                // cycle mode force reset
+        //_phaseAcc[1] = 0;                // cycle mode force reset
 
-        _lastRatio[1] = _ratio[1];
+        //_lastRatio[1] = _ratio[1];
       }
     }
     ///////////////////
@@ -143,14 +143,14 @@ void Lfo::update() {
         }
       }
       //////////////////*/
-      ////probando de sacar esto cuando caubmio ratio. Que el master sea el nuevo clock out?
-      /*if (_freeRunning[1 - lfoN] == false || _freeRunning[lfoN] == false) {
+      ////queda mejor aca que en la parte de master clock, para que no se desfase cuando cambia de ratio
+      if (_freeRunning[1 - lfoN] == false || _freeRunning[lfoN] == false) {
         if (_lastRatio[1 - lfoN] != _ratio[1 - lfoN]) {  // if (phaseIncChange) {
           _phaseAcc[1 - lfoN] = 0;                       // cycle mode force reset
 
           _lastRatio[1 - lfoN] = _ratio[1 - lfoN];
         }
-      }*/
+      }
 
       if (_randomFlag[lfoN] && !_syncEnabled[lfoN]) {  // random refresca valor en el momento del hardsync. Si esta en sync externo no genera aca.
         _output[lfoN] = random(0, 4096);
@@ -209,7 +209,7 @@ void Lfo::setPeriodMsClock(float period) {
 
 void Lfo::setRatio(uint8_t lfoNum, float ratio) {
   _ratio[lfoNum] = ratio;
-  _phaseAcc[lfoNum] = _phaseAcc[1 - lfoNum] / ratio;                        // modo lock para que los sync no tiren retrigger. Divido porque accum es inversa de F
+  //_phaseAcc[lfoNum] = _phaseAcc[1 - lfoNum] / ratio;                        // modo lock para que los sync no tiren retrigger. Divido porque accum es inversa de F
   _phaseInc[lfoNum] = (_ticksCycle * (1000. / (_period[lfoNum] * ratio)));  //*1.004
 }
 
