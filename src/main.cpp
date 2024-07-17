@@ -29,14 +29,14 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C  // CHEQUEAR ADDRESS, PUEDE SER 0x3C o 0x3D
 
-#define COMPENSATION 1.   // para ajustar periodo
+#define COMPENSATION 1//0.9985   // para ajustar periodo
 #define LED_REFRESH 33    // 1000/33 30fps
 #define LED_BRIGHTNESS 1  // 0. a 1.
 #define LED_CLOCK_IN 0
 #define LED_LFO1 1
 #define LED_LFO2 2
-#define LED_ENCODER1 4
-#define LED_ENCODER2 5
+#define LED_ENCODER1 3
+#define LED_ENCODER2 4
 #define LED_PIN 16
 #define NUM_LEDS 6
 #define BUILTIN_LED 25
@@ -361,6 +361,7 @@ static void alarm_in_us(uint32_t delay_us) {
 }
 //// FIN TIMER INTERRUPT PARA LFO ////
 void loop() {
+  
   updatePots();
   updateButtons();
   updateEncoderBpm();
@@ -448,6 +449,7 @@ void resetAll() {
   lfo.resetPhaseMaster();
   updateBpm();
   leds.setPixelColor(LED_CLOCK_IN, leds.Color(0, 0, 0));  // apaga led si no hay clock in
+  leds.show();
 }
 void updatePots() {
   potMult1.update();

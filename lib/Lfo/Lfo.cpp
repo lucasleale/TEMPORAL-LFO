@@ -36,7 +36,6 @@ void Lfo::update() {
     digitalWrite(_clockOutPin, HIGH);
     _clockOutValue = HIGH;
     _flagTriggerClockOut = true;
-  
   }
   _phaseAccClockOut += _phaseIncClockOut;
 
@@ -53,7 +52,7 @@ void Lfo::update() {
       if (_lastRatio[0] != _ratio[0]) {  // if (phaseIncChange) { //mmm para el cambio de ratio y lock no funciona bien aca
         //_phaseAcc[0] = 0;                // cycle mode force reset
 
-        //_lastRatio[0] = _ratio[0]; 
+        //_lastRatio[0] = _ratio[0];
       }
     }
     if (_freeRunning[1] == false) {
@@ -127,8 +126,8 @@ void Lfo::update() {
 
     ////////cuando pasa el tamanio de la tabla vuelve a 0, aca se calculan varias cosas por tema de hard sync
     if (_phaseAcc[lfoN] > _tableSizeFixedPoint) {
-      //la comparacion del abs es por el error de calculo de la DDS. Si estan a ratios muy distantes se van a desfasar,
-      //con la comparacion chequeamos esa diferencia y si esta entre el margen de error, fuerza reset.
+      // la comparacion del abs es por el error de calculo de la DDS. Si estan a ratios muy distantes se van a desfasar,
+      // con la comparacion chequeamos esa diferencia y si esta entre el margen de error, fuerza reset.
       if (abs(_phaseAcc12b[0] - _phaseAcc12b[1]) <= 256) {  // este 128 hay que reemplazarlo por un valor que sea un ratio
         // entre ratio1 y ratio2. Mientras mas grande es la diferencia mas grande es el valor. x4 y 0.25 en 128 queda bien.
         //  1-lfoN invierte indice porque actua sobre el otro lfo
@@ -220,8 +219,8 @@ void Lfo::setWave(uint8_t lfoNum, uint8_t wave) {
 }
 
 void Lfo::resetPhaseMaster() {
-  _phaseAccClockOut = 0; //esto lo sacamos de resetPhase para que resetee separado del resetphase 
-                         //si no se triggeaba con cada reset de la subdivision
+  _phaseAccClockOut = 0;  // esto lo sacamos de resetPhase para que resetee separado del resetphase
+                          // si no se triggeaba con cada reset de la subdivision
 }
 void Lfo::resetPhase(uint8_t lfoNum) {
   // noInterrupts();
