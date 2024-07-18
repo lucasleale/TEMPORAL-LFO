@@ -1,4 +1,4 @@
-// branch testdisplay
+// branch lfo24
 
 #include <Adafruit_GFX.h>
 #include <Adafruit_I2CDevice.h>
@@ -68,7 +68,7 @@
 const uint16_t TRIGGER_PERIOD = 200;  // 200 ticks a 10khz * 0.1ms = 20ms
 
 const uint8_t NUM_WAVES = 7;
-const uint32_t SAMPLE_RATE = 4000;  // dejar fijo en 10khz o 4khz?
+const uint32_t SAMPLE_RATE = 10000;  // dejar fijo en 10khz o 4khz?
 const float SAMPLE_RATE_MS = 1000. / SAMPLE_RATE;
 const uint32_t TABLE_SIZE = 4096;                   // largo de tabla de ondas, tal vez lo incremente mas
 const uint32_t PWM_RANGE = 1023;                    // (2^n )- 1 //4095 para 12bit, 1023 para 10bit
@@ -366,9 +366,10 @@ void loop() {
   updateButtons();
   updateEncoderBpm();
   tapTempo();
-  updateLfoLeds();
-  updateTempoLed();
-
+  //updateLfoLeds();
+  //updateTempoLed();
+  //analogWrite(LFO1_PIN, lfo.getLfoValuesPWM(0));
+  //analogWrite(LFO2_PIN, lfo.getLfoValuesPWM(1));
   clockInPullUp();
   if (gotNewPulse) {
     // Serial.print(ratioLfo1);
@@ -807,6 +808,9 @@ int lastMultiplier2Core2;
 int lastPeriodFreeRunning1Core2;
 int lastPeriodFreeRunning2Core2;
 void loop1() {
+
+  updateLfoLeds();
+  updateTempoLed();
   // uint32_t counterTicksPulseCore = rp2040.fifo.pop();
   // Serial.println(counterTicksPulseCore);
   // delay(20);
