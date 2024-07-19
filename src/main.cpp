@@ -1,5 +1,5 @@
 // branch lfo24
-
+// 
 #include <Adafruit_GFX.h>
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_NeoPixel.h>
@@ -29,7 +29,7 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C  // CHEQUEAR ADDRESS, PUEDE SER 0x3C o 0x3D
 
-#define COMPENSATION 1    // 0.9985   // para ajustar periodo
+#define COMPENSATION 1    // 0.9985   // DEJAR EN 1!!!!!
 #define LED_REFRESH 33    // 1000/33 30fps
 #define LED_BRIGHTNESS 1  // 0. a 1.
 #define LED_CLOCK_IN 5
@@ -44,8 +44,8 @@
 #define ALARM_IRQ TIMER_IRQ_1
 #define POT1_PIN 27
 #define POT2_PIN 28
-#define BTN1_PIN 14
-#define BTN2_PIN 15
+#define BTN1_PIN 15
+#define BTN2_PIN 14
 #define TAP_PIN 12
 #define TAP_JACK 22
 #define ENC_PINA 3
