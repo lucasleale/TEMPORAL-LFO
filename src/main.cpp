@@ -29,7 +29,7 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C  // CHEQUEAR ADDRESS, PUEDE SER 0x3C o 0x3D
 
-#define COMPENSATION 1//0.9985   // para ajustar periodo
+#define COMPENSATION 1    // 0.9985   // para ajustar periodo
 #define LED_REFRESH 33    // 1000/33 30fps
 #define LED_BRIGHTNESS 1  // 0. a 1.
 #define LED_CLOCK_IN 0
@@ -71,7 +71,7 @@ const uint8_t NUM_WAVES = 7;
 const uint32_t SAMPLE_RATE = 10000;  // dejar fijo en 10khz o 4khz?
 const float SAMPLE_RATE_MS = 1000. / SAMPLE_RATE;
 const uint32_t TABLE_SIZE = 4096;                   // largo de tabla de ondas, tal vez lo incremente mas
-const uint32_t PWM_RANGE = 1023;                    // (2^n )- 1 //4095 para 12bit, 1023 para 10bit
+const uint32_t PWM_RANGE = 4095;                    // (2^n )- 1 //4095 para 12bit, 1023 para 10bit
 const uint32_t PWM_FREQ = F_CPU / (PWM_RANGE + 1);  // 61035Hz en 12bit, 244,140Hz en 10bit
 const float ALARM_PERIOD = 1000000. / SAMPLE_RATE;  // timer interrupt en microsegundos
 
@@ -141,6 +141,7 @@ uint32_t counterTicksLoop;
 volatile uint32_t counterDivTicksLfo1;
 volatile uint32_t pulseTicksLfo1;
 volatile float pulsePeriodMsLfo1;
+volatile float pulsePeriodMsClock;
 // volatile uint32_t counterTicksLfo2;
 volatile uint32_t counterDivTicksLfo2;
 volatile uint32_t pulseTicksLfo2;
@@ -256,10 +257,11 @@ void setup() {
 }
 void syncPulse() {
   pulseConnected = true;
-  lfo.resetPhaseMaster();  // reseteamos el master clock interno solo con los pulsos
-                           // antes el reset era igual que los lfos, entonces se triggeaba el clock out con cada syncout
-  counterTimeOut = 0;      // este es el watchdog, resetea a 0 en todos los pulsos
-  if (!isFreeRunning1) {   // el sync lo activa solo si no esta en free
+  // lfo.resetPhaseMaster();
+  // lfo.resetPhaseMaster();  // reseteamos el master clock interno solo con los pulsos
+  //  antes el reset era igual que los lfos, entonces se triggeaba el clock out con cada syncout
+  counterTimeOut = 0;     // este es el watchdog, resetea a 0 en todos los pulsos
+  if (!isFreeRunning1) {  // el sync lo activa solo si no esta en free
     lfo.enableSync(0);
   }  // mover esto a otro lado...
   if (!isFreeRunning2) {
@@ -270,6 +272,7 @@ void syncPulse() {
   //   counterDivTicksLfo1 = 0;
 
   //}
+  
   if (pulseCounter % 2 == 0) {  // always
     counterTicksPulse = 0;
   } else if (pulseCounter % 2 == 1) {  // always
@@ -277,7 +280,8 @@ void syncPulse() {
 
     if (counterTicksPulse > 400) {  // que tome como pulso valido si es mayor al umbral de bounce
       pulseTicksLfo1 = counterTicksPulse * ratioLfo1;
-      pulsePeriodMsLfo1 = counterTicksPulse * SAMPLE_RATE_MS;
+      pulsePeriodMsClock = counterTicksPulse * SAMPLE_RATE_MS;
+      pulsePeriodMsLfo1 = (counterTicksPulse * SAMPLE_RATE_MS);  //* 1.00120144;
       pulseTicksLfo2 = counterTicksPulse * ratioLfo2;
       // pulsePeriodMsLfo2 = counterTicksPulse * SAMPLE_RATE_MS; //en verdad solo necesito el pulseperiod de uno solo
       if (!isFreeRunning1) {  // lo mismo aca con el free running
@@ -286,11 +290,17 @@ void syncPulse() {
       if (!isFreeRunning2) {
         lfo.setPeriodMs(1, pulsePeriodMsLfo1);
       }
-      lfo.setPeriodMsClock(periodMs);
+
+      // con el nuevo codigo x24 en vez de resetear cada lfo, reseteamos el master, xq los slaves derivan de el
+      // Serial.println(pulsePeriodMsLfo1);
 
       gotNewPulse = true;
     }
   }
+  lfo.resetPhaseMaster();
+  lfo.setPeriodMsClock(pulsePeriodMsClock);
+  Serial.println(pulsePeriodMsClock);
+  lfo.clockFromExt();
 
   if (pulseCounter % int(ceil(ratioLfo1 * multiplierSyncLfo1)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
     // counterTicksPulse = 0;
@@ -323,7 +333,7 @@ static void alarm_irq(void) {
       if (newTriggerLfo1) {
         // digitalWrite(SYNC1_OUT_PIN, HIGH);
         if (!isFreeRunning1) {
-          lfo.resetPhase(0);
+          lfo.resetPhase(0);  // habia sacado esto pero creo que lo dejo para el lfo x24
         }
         // lfo.resetPhase(1);
         newTriggerLfo1 = false;
@@ -332,10 +342,13 @@ static void alarm_irq(void) {
       // digitalWrite(SYNC1_OUT_PIN, LOW);
       newTriggerLfo1 = true;
     }
-    if (counterDivTicksLfo2 % pulseTicksLfo2 == 0) {  // LFO1
+    if (counterDivTicksLfo2 % pulseTicksLfo2 == 0) {  // LFO2
       if (newTriggerLfo2) {
         // digitalWrite(SYNC1_OUT_PIN, HIGH);
         if (!isFreeRunning2) {
+          // lfo.resetPhaseMaster();
+
+          // Serial.println("reset");
           lfo.resetPhase(1);
         }
         // lfo.resetPhase(1);
@@ -361,15 +374,14 @@ static void alarm_in_us(uint32_t delay_us) {
 }
 //// FIN TIMER INTERRUPT PARA LFO ////
 void loop() {
-  
   updatePots();
   updateButtons();
   updateEncoderBpm();
   tapTempo();
-  //updateLfoLeds();
-  //updateTempoLed();
-  //analogWrite(LFO1_PIN, lfo.getLfoValuesPWM(0));
-  //analogWrite(LFO2_PIN, lfo.getLfoValuesPWM(1));
+  // updateLfoLeds();
+  // updateTempoLed();
+  // analogWrite(LFO1_PIN, lfo.getLfoValuesPWM(0));
+  // analogWrite(LFO2_PIN, lfo.getLfoValuesPWM(1));
   clockInPullUp();
   if (gotNewPulse) {
     // Serial.print(ratioLfo1);
@@ -404,6 +416,7 @@ void loop() {
   if (pulseConnected && counterTimeOut > timeOut) {
     resetAll();
     pulseConnected = false;
+    Serial.println("pulseDisconnected");
   }
   if (lastPulseConnected != pulseConnected) {
     if (pulseConnected) {
@@ -434,12 +447,14 @@ void clockInPullUp() {
   if (clockIn.rose() && flagTimeOut == false) {
     timeOutPin = 0;
     flagTimeOut = true;
+    Serial.println(pulseConnected);
   }
   if (clockIn.read() == HIGH && timeOutPin > 250 && flagTimeOut) {
     flagTimeOut = false;
 
     pulseConnected = false;
     resetAll();
+    Serial.println(pulseConnected);
   }
 }
 void resetAll() {
@@ -462,7 +477,7 @@ void updatePots() {
   // multiplier1 = map(potMult1.getValue(), 1023, 0, 0, numMultipliers);  // potes estan invertidos en el hard
   multiplier2 = map(potMult2.getValue(), 0, 1023, 0, numMultipliers);
   // multiplier2 = map(potMult2.getValue(), 1023, 0, 0, numMultipliers);
-  Serial.println(potMult1.getValue());
+  // Serial.println(potMult1.getValue());
   // delay(20);
 
   if (multiplier1 != lastMultiplier1) {
@@ -488,9 +503,9 @@ void updatePots() {
       lfo.setPeriodMs(0, periodFreeRunning1);
       periodFreeRunning1Core2 = periodFreeRunning1;
       flagFreq = true;
-      Serial.print(potMult1.getValue());
-      Serial.print("   ");
-      Serial.println(periodFreeRunning1);
+      // Serial.print(potMult1.getValue());
+      // Serial.print("   ");
+      // Serial.println(periodFreeRunning1);
     }
   }
 
@@ -518,7 +533,7 @@ void updatePots() {
       // periodFreeRunning2Core2 = periodFreeRunning2;
       periodFreeRunning2Core2 = periodFreeRunning2;
       flagFreq2 = true;
-      Serial.println(periodFreeRunning2);
+      // Serial.println(periodFreeRunning2);
       lfo.setPeriodMs(1, periodFreeRunning2);
     }
   }
@@ -556,6 +571,7 @@ void updateButtons() {
       flagFreq = true;
       lfo.turnFreeRunning(0, isFreeRunning1);
       lfo.setPeriodMs(0, periodFreeRunning1);
+      lfo.setRatio(0, 1);
 
     } else {
       multiplier1 = map(potMult1.getValue(), 0, 1023, 0, numMultipliers);
@@ -596,6 +612,7 @@ void updateButtons() {
       Serial.println("free running2");
       lfo.turnFreeRunning(1, isFreeRunning2);
       lfo.setPeriodMs(1, periodFreeRunning2);
+      lfo.setRatio(1, 1);  // cuando es free running el ratio tiene que ser 1.
 
     } else {
       multiplier2 = map(potMult2.getValue(), 0, 1023, 0, numMultipliers);
@@ -661,8 +678,12 @@ float msToBpm(float period) {
 void updateBpm() {
   if (!pulseConnected) {
     periodMs = bpmToMs(bpm);
-    lfo.setPeriodMs(0, periodMs * COMPENSATION);
-    lfo.setPeriodMs(1, periodMs * COMPENSATION);
+    if (!isFreeRunning1) {  // si no me modifica la freq de los lfo en free running
+      lfo.setPeriodMs(0, periodMs * COMPENSATION);
+    }
+    if (!isFreeRunning2) {
+      lfo.setPeriodMs(1, periodMs * COMPENSATION);
+    }
     lfo.setPeriodMsClock(periodMs * COMPENSATION);
     // displayBpm(bpm);
     bpmCore2 = bpm;
@@ -808,7 +829,6 @@ int lastMultiplier2Core2;
 int lastPeriodFreeRunning1Core2;
 int lastPeriodFreeRunning2Core2;
 void loop1() {
-
   updateLfoLeds();
   updateTempoLed();
   // uint32_t counterTicksPulseCore = rp2040.fifo.pop();

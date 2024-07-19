@@ -23,6 +23,7 @@ class Lfo {
   void turnFreeRunning(uint8_t lfoNum, bool toggle);
   int getLfoValues(uint8_t lfoNum);
   int getLfoValuesPWM(uint8_t lfoNum);
+  void clockFromExt();
   bool getClockOut();
   // void syncEnabled(uint8_t lfoNum);
  private:
@@ -47,6 +48,7 @@ class Lfo {
   volatile uint16_t _phaseAcc12b[2];
   volatile uint32_t _phaseAccMaster12b;
   volatile uint32_t _masterTicks;
+  volatile uint32_t _masterTicksArr[2];
   ;
   float _compensation;
   volatile uint16_t _lfoPins[2];
