@@ -36,7 +36,7 @@
 #define LED_LFO1 4
 #define LED_LFO2 1
 #define LED_ENCODER1 0
-#define LED_ENCODER2 2
+#define LED_ENCODER2 2 // a ver
 #define LED_PIN 16
 #define NUM_LEDS 6
 #define BUILTIN_LED 25
