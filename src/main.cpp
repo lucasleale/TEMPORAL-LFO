@@ -29,14 +29,14 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C  // CHEQUEAR ADDRESS, PUEDE SER 0x3C o 0x3D
 
-#define COMPENSATION 1    // 0.9985   // para ajustar periodo
+#define COMPENSATION 1    //ya no. DEJAR EN 1!!!!
 #define LED_REFRESH 33    // 1000/33 30fps
-#define LED_BRIGHTNESS 1  // 0. a 1.
-#define LED_CLOCK_IN 0
-#define LED_LFO1 1
-#define LED_LFO2 2
-#define LED_ENCODER1 3
-#define LED_ENCODER2 4
+#define LED_BRIGHTNESS 0.3  // 0. a 1.
+#define LED_CLOCK_IN 5
+#define LED_LFO1 4
+#define LED_LFO2 1
+#define LED_ENCODER1 0
+#define LED_ENCODER2 2
 #define LED_PIN 16
 #define NUM_LEDS 6
 #define BUILTIN_LED 25
