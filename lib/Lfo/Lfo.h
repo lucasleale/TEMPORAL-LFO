@@ -11,7 +11,7 @@ class Lfo {
   void setFreqHz(uint8_t lfoNum, float freq);
   void update();
   void setPeriodMs(uint8_t lfoNum, float period);
-  void setPeriodMsClock(float period); //el clock out tiene su propio periodo, si no, cuando esta en free running se cambia a algun lfo
+  void setPeriodMsClock(float period);  // el clock out tiene su propio periodo, si no, cuando esta en free running se cambia a algun lfo
   void setRatio(uint8_t lfoNum, float ratio);
   void resetPhase(uint8_t lfoNum);
   void resetPhaseMaster();
@@ -22,6 +22,8 @@ class Lfo {
   void setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity);
   void turnFreeRunning(uint8_t lfoNum, bool toggle);
   int getLfoValues(uint8_t lfoNum);
+  int getLfoValuesPWM(uint8_t lfoNum);
+  void clockFromExt();
   bool getClockOut();
   // void syncEnabled(uint8_t lfoNum);
  private:
@@ -40,31 +42,40 @@ class Lfo {
   volatile uint32_t _phaseAcc[2];
   volatile uint32_t _phaseAccClockOut;
   volatile uint32_t _phaseIncClockOut;
+  volatile uint32_t _phaseAccMaster;
+  volatile uint32_t _phaseIncMaster;
   volatile uint16_t _phaseAccClockOut12b;
   volatile uint16_t _phaseAcc12b[2];
+  volatile uint32_t _phaseAccMaster12b;
+  volatile uint32_t _masterTicks;
+  volatile uint32_t _masterTicksArr[2];
+  ;
+  float _compensation;
   volatile uint16_t _lfoPins[2];
   volatile uint16_t _syncPins[2];
   volatile bool _randomFlag[2];
   volatile float _ratio[2] = {1, 1};
+  volatile float _ratio24[2] = {1, 1};
   volatile float _lastRatio[2] = {1, 1};
   volatile float _period[2] = {1, 1};
+  volatile float _periodMaster = 1;
   volatile uint16_t _bitshift;
   volatile uint16_t _range;
   volatile uint16_t _rangeShift;
   volatile uint8_t _ledShift;
-  volatile uint32_t _triggerPeriod[2] = {200, 200}; //triggerperiod y counter se encargan del duty cycle. En samples del samplerate
+  volatile uint32_t _triggerPeriod[2] = {200, 200};  // triggerperiod y counter se encargan del duty cycle. En samples del samplerate
   volatile uint32_t _triggerCounter[2];
   volatile uint32_t _triggerCounterClockOut;
-  volatile uint32_t _triggerPeriodClockOut = 200;;
+  volatile uint32_t _triggerPeriodClockOut = 200;
+  ;
   volatile bool _clockOutValue;
   volatile bool _triggerOn[2] = {1, 1};
   volatile bool _triggerOff[2] = {0, 0};
   volatile bool _freeRunning[2] = {0, 0};
-  volatile bool _flagTrigger[2] = {false, false}; 
+  volatile bool _flagTrigger[2] = {false, false};
   volatile bool _flagTriggerClockOut;
   void computeWaveforms();
   void syncOut();
-  
 };
 // const int Lfo::bitshift = 17; //4096
 /*
