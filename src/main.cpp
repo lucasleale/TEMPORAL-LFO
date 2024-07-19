@@ -32,11 +32,11 @@
 #define COMPENSATION 1    // 0.9985   // para ajustar periodo
 #define LED_REFRESH 33    // 1000/33 30fps
 #define LED_BRIGHTNESS 1  // 0. a 1.
-#define LED_CLOCK_IN 0
-#define LED_LFO1 1
-#define LED_LFO2 2
-#define LED_ENCODER1 3
-#define LED_ENCODER2 4
+#define LED_CLOCK_IN 5
+#define LED_LFO1 4
+#define LED_LFO2 1
+#define LED_ENCODER1 0
+#define LED_ENCODER2 2
 #define LED_PIN 16
 #define NUM_LEDS 6
 #define BUILTIN_LED 25
