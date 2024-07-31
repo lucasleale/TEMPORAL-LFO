@@ -31,7 +31,8 @@
 
 #define COMPENSATION 1    // 0.9985   // DEJAR EN 1!!!!!
 #define LED_REFRESH 33    // 1000/33 30fps
-#define LED_BRIGHTNESS 1  // 0. a 1.
+#define LED_BRIGHTNESS 0.05  // 0. a 1.
+#define LED_BRIGHTNESS_ENC 0.5
 #define LED_CLOCK_IN 5
 #define LED_LFO1 4
 #define LED_LFO2 1
@@ -50,8 +51,8 @@
 #define TAP_JACK 22
 #define ENC_PINA 3
 #define ENC_PINB 2
-#define LFO1_PIN 20
-#define LFO2_PIN 21
+#define LFO1_PIN 21 //era 20
+#define LFO2_PIN 20 //era 21
 #define SYNC1_OUT_PIN 17
 #define SYNC2_OUT_PIN 18
 #define CLOCK_OUT_PIN 19
@@ -496,7 +497,7 @@ void updatePots() {
       lfo.setRatio(0, ratioLfo1);
     }
   }
-  periodFreeRunning1 = fscale(potMult1.getValue(), 0, 1023, 100, 1000, -5);
+  periodFreeRunning1 = fscale(potMult1.getValue(), 0, 1023, 20, 1000, -5);
   // periodFreeRunning1 = fscale(potMult1.getValue(), 1023, 3, 1000, 100, 7);
   if (isFreeRunning1) {
     if (potMult1.hasChanged()) {
@@ -526,7 +527,8 @@ void updatePots() {
       lfo.setRatio(1, ratioLfo2);
     }
   }
-  periodFreeRunning2 = fscale(potMult2.getValue(), 0, 1023, 100, 1000, -5);
+  //bla
+  periodFreeRunning2 = fscale(potMult2.getValue(), 0, 1023, 20, 1000, -5);
   // periodFreeRunning2 = fscale(potMult2.getValue(), 1023, 3, 1000, 100, 7);
   if (isFreeRunning2) {
     if (potMult2.hasChanged()) {
@@ -642,8 +644,9 @@ void tapTempo() {
       lfo.resetPhase(0);
       lfo.resetPhase(1);
       lfo.resetPhaseMaster();
+      lfo.clockFromExt();
 
-      leds.setPixelColor(LED_CLOCK_IN, leds.Color(255 * LED_BRIGHTNESS, 0, 255 * LED_BRIGHTNESS));
+      //leds.setPixelColor(LED_CLOCK_IN, leds.Color(255 * LED_BRIGHTNESS, 0, 255 * LED_BRIGHTNESS));
       tapLed = 0;
       flagTapLed = true;
       if (!isFreeRunning1) {
@@ -659,7 +662,8 @@ void tapTempo() {
       // displayBpm(bpm);
     }
     if (tapLed > 100 && flagTapLed) {
-      leds.setPixelColor(LED_CLOCK_IN, leds.Color(0, 0, 0));
+      //leds.setPixelColor(LED_CLOCK_IN, leds.Color(0, 0, 0));
+      //leds.show();
       tapLed = 0;
       flagTapLed = false;
     }
@@ -739,12 +743,12 @@ void updateTempoLed() {
   if (ledTempo != ledTempoLast) {
     if (pulseConnected) {  // esta en sync in parpadea leds encoder y led sync in
       leds.setPixelColor(LED_CLOCK_IN, leds.Color(0, 255 * ledTempo * LED_BRIGHTNESS, 0));
-      leds.setPixelColor(LED_ENCODER1, leds.Color(0, 255 * ledTempo * LED_BRIGHTNESS, 0));
-      leds.setPixelColor(LED_ENCODER2, leds.Color(0, 255 * ledTempo * LED_BRIGHTNESS, 0));
+      leds.setPixelColor(LED_ENCODER1, leds.Color(0, 255 * ledTempo * LED_BRIGHTNESS_ENC, 0));
+      leds.setPixelColor(LED_ENCODER2, leds.Color(0, 255 * ledTempo * LED_BRIGHTNESS_ENC, 0));
 
     } else {
-      leds.setPixelColor(LED_ENCODER1, leds.Color(0, 0, 255 * ledTempo * LED_BRIGHTNESS));
-      leds.setPixelColor(LED_ENCODER2, leds.Color(0, 0, 255 * ledTempo * LED_BRIGHTNESS));
+      leds.setPixelColor(LED_ENCODER1, leds.Color(0, 0, 255 * ledTempo * LED_BRIGHTNESS_ENC));
+      leds.setPixelColor(LED_ENCODER2, leds.Color(0, 0, 255 * ledTempo * LED_BRIGHTNESS_ENC));
     }
     leds.show();
     ledTempoLast = ledTempo;
