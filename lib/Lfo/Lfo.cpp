@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 #include "pico/stdlib.h"
-
+#define DOUBLE_TRIGGER_THRESH 6  // 6 = 1/16th
 Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
          uint32_t tableSize, uint16_t range, uint8_t syncPin1, uint8_t syncPin2) {
   pinMode(lfoPin1, OUTPUT);
@@ -37,8 +37,8 @@ Lfo::Lfo(volatile byte lfoPin1, volatile byte lfoPin2, uint32_t sampleRate,
 void Lfo::update() {
   _phaseAccMaster += _phaseIncMaster;
 
-  if (!_syncEnabled[0] && !_syncEnabled[1]) { //todo este bloque se ejecuta cuando ninguno esta en sync, cuando esta como master.
-  //para sync usa el algoritmo viejo. El clock out en sync tambien es aparte.
+  if (!_syncEnabled[0] && !_syncEnabled[1]) {  // todo este bloque se ejecuta cuando ninguno esta en sync, cuando esta como master.
+    // para sync usa el algoritmo viejo. El clock out en sync tambien es aparte.
     if (!_freeRunning[0]) {
       _phaseAcc[0] += _phaseInc[0];
       _phaseAcc12b[0] = _phaseAcc[0] >> 17;
@@ -49,12 +49,16 @@ void Lfo::update() {
     }
 
     if (_phaseAccMaster > _tableSizeFixedPoint) {  // master phasor. Va x24 veces mas rapido. Los lfo1 y lfo2 derivan de aca contando cada cycleÏ
+      // Serial.print(_masterTicks % 24);
+      // Serial.print("   ");
+      // Serial.println(_phaseAcc[0]);
       _phaseAccMaster -= _tableSizeFixedPoint;
       _masterTicks++;
       for (int lfoN = 0; lfoN < 2; lfoN++) {
         if (!_freeRunning[lfoN]) {
           if (_masterTicks % int(ceil(_ratio24[lfoN])) == 0) {  // masterticks incrementa 1 en cada ciclo del master, con modulo derivan slaves
             _phaseAcc[lfoN] = 0;
+
             _phaseAcc12b[lfoN] = 0;
             if (_randomFlag[lfoN]) {
               _output[lfoN] = random(0, 4096);
@@ -63,22 +67,25 @@ void Lfo::update() {
           }
         }
       }
-      if (_masterTicks % 24 == 0) {
-        _triggerCounterClockOut = 0;
-        digitalWrite(_clockOutPin, HIGH);
+      if (_extClock == false) {
+        if (_masterTicks % 24 == 0) {
+          _triggerCounterClockOut = 0;
+          digitalWrite(_clockOutPin, HIGH);
 
-        _clockOutValue = 1;
-        _flagTriggerClockOut = true;
+          _clockOutValue = 1;
+          _flagTriggerClockOut = true;
+        }
       }
     }
-
-    if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
-      digitalWrite(_clockOutPin, LOW);
-      _clockOutValue = LOW;
-      _triggerCounterClockOut = 0;
-      _flagTriggerClockOut = false;
+    if (_extClock == false) {
+      if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
+        digitalWrite(_clockOutPin, LOW);
+        _clockOutValue = LOW;
+        _triggerCounterClockOut = 0;
+        _flagTriggerClockOut = false;
+      }
+      _triggerCounterClockOut++;
     }
-    _triggerCounterClockOut++;
 
     for (int lfoN = 0; lfoN < 2; lfoN++) {
       switch (_waveSelector[lfoN]) {  ////////////calculo formas de onda
@@ -146,19 +153,23 @@ void Lfo::update() {
       _masterTicks++;
       if (_masterTicks % 24 == 0) {
         _triggerCounterClockOut = 0;
-        digitalWrite(_clockOutPin, HIGH);
+        if (_extClock == false) {
+          digitalWrite(_clockOutPin, HIGH);
+        }
         _clockOutValue = 1;
         _flagTriggerClockOut = true;
       }
     }
     if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
-      digitalWrite(_clockOutPin, LOW);
+      if (_extClock == false) {
+        digitalWrite(_clockOutPin, LOW);
+      }
       _clockOutValue = LOW;
       _triggerCounterClockOut = 0;
       _flagTriggerClockOut = false;
     }
     _triggerCounterClockOut++;
-     //Serial.println("codigo clock from ext aca");
+    // Serial.println("codigo clock from ext aca");
     /*if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
       digitalWrite(_clockOutPin, LOW);
       _clockOutValue = LOW;
@@ -361,6 +372,16 @@ void Lfo::setPeriodMs(uint8_t lfoNum, float period) {
 void Lfo::setPeriodMsClock(float period) {
   _phaseIncMaster = (_ticksCycle * (1000. / period) * 24) * _compensation;  // para que el Msclock siga en la suya si el resto esta en free running.
   // Serial.println(_phaseIncMaster);
+  //  Serial.println(_phaseIncMaster);
+}
+
+void Lfo::setExtClock(bool state) {
+  if (state) {
+    _extClock = true;
+  } else {
+    _extClock = false;
+  }
+  Serial.println(_extClock);
 }
 
 void Lfo::setRatio(uint8_t lfoNum, float ratio) {
@@ -403,8 +424,10 @@ void Lfo::resetPhaseMaster() {
   }
 
   _counterReset++;*/
-  _masterTicks = 0;
+
+  _masterTicks = 0;  // comentado 22/10/24
   _phaseAccMaster = 0;
+
   /*_triggerCounterClockOut = 0;  // esto es importante para que no se olvide ningun pulso *1
   digitalWrite(_clockOutPin, HIGH);
   _clockOutValue = 1;
@@ -418,11 +441,24 @@ void Lfo::resetPhaseMaster() {
   // ya me hice un quilombo aca. El problema es un glitch en la forma de onda, pero para mi que es inaudible.
   // asi que dejo esto asi
 }
+void Lfo::triggerReset() {
+  // Serial.println(_masterTicks % 24);
+  if (_masterTicks % 24 > DOUBLE_TRIGGER_THRESH) {  // evita doble trigger
+    _masterTicks = 0;
+    _phaseAccMaster = 0;
+    _triggerCounterClockOut = 0;  // esto es importante para que no se olvide ningun pulso *1
+    digitalWrite(_clockOutPin, HIGH);
+    _clockOutValue = 1;
+    _flagTriggerClockOut = true;
+  }
+}
 void Lfo::clockFromExt() {
+  // Serial.println(_masterTicks % 24);
+
   _masterTicks = 0;
   _phaseAccMaster = 0;
   _triggerCounterClockOut = 0;  // esto es importante para que no se olvide ningun pulso *1
-  digitalWrite(_clockOutPin, HIGH);
+  // digitalWrite(_clockOutPin, HIGH);
   _clockOutValue = 1;
   _flagTriggerClockOut = true;
 }
@@ -485,6 +521,13 @@ void Lfo::setTriggerPeriod(uint8_t lfoNum, uint16_t triggerPeriod) {
 void Lfo::setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity) {
   _triggerOn[lfoNum] = triggerPolarity;
   _triggerOff[lfoNum] = 1 - triggerPolarity;
+}
+
+void Lfo::clockOut(bool state){
+  if(_extClock){
+    digitalWrite(_clockOutPin, state);
+  }
+
 }
 /*
 Lfo::Lfo(volatile byte lfoPin, uint32_t sampleRate, uint32_t tableSize) {

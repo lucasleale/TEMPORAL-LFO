@@ -23,8 +23,11 @@ class Lfo {
   void turnFreeRunning(uint8_t lfoNum, bool toggle);
   int getLfoValues(uint8_t lfoNum);
   int getLfoValuesPWM(uint8_t lfoNum);
+  void triggerReset();
   void clockFromExt();
   bool getClockOut();
+  void setExtClock(bool state);
+  void clockOut(bool state);
   // void syncEnabled(uint8_t lfoNum);
  private:
   volatile uint8_t _lfoPin1;
@@ -49,7 +52,7 @@ class Lfo {
   volatile uint32_t _phaseAccMaster12b;
   volatile uint32_t _masterTicks;
   volatile uint32_t _masterTicksArr[2];
-  ;
+  
   float _compensation;
   volatile uint16_t _lfoPins[2];
   volatile uint16_t _syncPins[2];
@@ -67,13 +70,14 @@ class Lfo {
   volatile uint32_t _triggerCounter[2];
   volatile uint32_t _triggerCounterClockOut;
   volatile uint32_t _triggerPeriodClockOut = 200;
-  ;
+  
   volatile bool _clockOutValue;
   volatile bool _triggerOn[2] = {1, 1};
   volatile bool _triggerOff[2] = {0, 0};
   volatile bool _freeRunning[2] = {0, 0};
   volatile bool _flagTrigger[2] = {false, false};
   volatile bool _flagTriggerClockOut;
+  volatile bool _extClock;
   void computeWaveforms();
   void syncOut();
 };

@@ -1,5 +1,6 @@
 // branch lfo24
-// 30/7/2024
+// 8/10, sacamos reset, fix sync in, taps 4
+//22/10, volvimos a poner reset, fix double trigger, clock out es thru de clock in, fix auto clock ext
 #include <Adafruit_GFX.h>
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_NeoPixel.h>
@@ -29,10 +30,10 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C  // CHEQUEAR ADDRESS, PUEDE SER 0x3C o 0x3D
 
-#define COMPENSATION 1    // 0.9985   // DEJAR EN 1!!!!!
-#define LED_REFRESH 33    // 1000/33 30fps
+#define COMPENSATION 1       // 0.9985   // DEJAR EN 1!!!!!
+#define LED_REFRESH 33       // 1000/33 30fps
 #define LED_BRIGHTNESS 0.05  // 0. a 1.
-#define LED_BRIGHTNESS_ENC 0.5
+#define LED_BRIGHTNESS_ENC 1
 #define LED_CLOCK_IN 5
 #define LED_LFO1 4
 #define LED_LFO2 1
@@ -51,8 +52,8 @@
 #define TAP_JACK 22
 #define ENC_PINA 3
 #define ENC_PINB 2
-#define LFO1_PIN 21 //era 20
-#define LFO2_PIN 20 //era 21
+#define LFO1_PIN 21  // era 20
+#define LFO2_PIN 20  // era 21
 #define SYNC1_OUT_PIN 17
 #define SYNC2_OUT_PIN 18
 #define CLOCK_OUT_PIN 19
@@ -66,6 +67,7 @@
 #define TRIGGER_DUTY 200  // 200 * 10khz = 20mS
 #define POS 1
 #define INV 0
+#define TIME_OUT_CLOCK_IN 5000
 const uint16_t TRIGGER_PERIOD = 200;  // 200 ticks a 10khz * 0.1ms = 20ms
 
 const uint8_t NUM_WAVES = 7;
@@ -91,7 +93,7 @@ PioEncoder encoder(2);
 elapsedMillis btnWaveTime1;
 elapsedMillis btnWaveTime2;
 elapsedMillis ledsFps;
-elapsedMillis timeOutPin;  // cuanto tiempo estuvo HIGH
+elapsedMillis timeOutCounter;  // cuanto tiempo estuvo HIGH
 elapsedMillis tapLed;      // duty
 // prototypes
 void updateButtons();
@@ -220,7 +222,7 @@ void setup() {
   tapExt.attach(TAP_JACK, INPUT_PULLUP);
   tapExt.interval(25);
   clockIn.attach(CLOCK_IN_PIN, INPUT_PULLUP);
-  clockIn.interval(25);
+  clockIn.interval(100);
   lfo.setTriggerPeriod(0, TRIGGER_PERIOD);
   lfo.setTriggerPeriod(1, TRIGGER_PERIOD);
   lfo.setPeriodMs(0, 500);
@@ -253,15 +255,16 @@ void setup() {
   lfo.resetPhase(0);
   lfo.resetPhase(1);
   lfo.resetPhaseMaster();
-  tap.setTotalTapValues(10);
+  tap.setTotalTapValues(4);
   // displayBpm(120.0);
 }
 void syncPulse() {
   pulseConnected = true;
+  timeOutCounter = 0;
   // lfo.resetPhaseMaster();
   // lfo.resetPhaseMaster();  // reseteamos el master clock interno solo con los pulsos
   //  antes el reset era igual que los lfos, entonces se triggeaba el clock out con cada syncout
-  counterTimeOut = 0;     // este es el watchdog, resetea a 0 en todos los pulsos
+  //counterTimeOut = 0;     // este es el watchdog, resetea a 0 en todos los pulsos
   if (!isFreeRunning1) {  // el sync lo activa solo si no esta en free
     lfo.enableSync(0);
   }  // mover esto a otro lado...
@@ -273,7 +276,7 @@ void syncPulse() {
   //   counterDivTicksLfo1 = 0;
 
   //}
-  
+
   if (pulseCounter % 2 == 0) {  // always
     counterTicksPulse = 0;
   } else if (pulseCounter % 2 == 1) {  // always
@@ -298,10 +301,12 @@ void syncPulse() {
       gotNewPulse = true;
     }
   }
+  //lfo.triggerReset();
+  lfo.clockFromExt();
   lfo.resetPhaseMaster();
   lfo.setPeriodMsClock(pulsePeriodMsClock);
   Serial.println(pulsePeriodMsClock);
-  lfo.clockFromExt();
+  
 
   if (pulseCounter % int(ceil(ratioLfo1 * multiplierSyncLfo1)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
     // counterTicksPulse = 0;
@@ -330,6 +335,8 @@ static void alarm_irq(void) {
   lfo.update();
 
   if (pulseConnected) {
+    bool clockInState = digitalRead(CLOCK_IN_PIN);
+    lfo.clockOut(clockInState); //clock thru.
     if (counterDivTicksLfo1 % pulseTicksLfo1 == 0) {  // LFO1
       if (newTriggerLfo1) {
         // digitalWrite(SYNC1_OUT_PIN, HIGH);
@@ -363,7 +370,7 @@ static void alarm_irq(void) {
     counterTicksPulse++;
     counterDivTicksLfo1++;
     counterDivTicksLfo2++;
-    counterTimeOut++;
+    //counterTimeOut++;
   }
 }
 
@@ -393,7 +400,7 @@ void loop() {
 
     // Serial.println(60000. / (counterTicksPulse * SAMPLE_RATE_MS));
     // noInterrupts();
-    counterTicksLoop = counterTicksPulse;
+    // counterTicksLoop = counterTicksPulse;
     // rp2040.fifo.push(counterTicksLoop);
 
     // interrupts();
@@ -414,19 +421,26 @@ void loop() {
 
     lastGotNewPulse = gotNewPulse;
   }
-  if (pulseConnected && counterTimeOut > timeOut) {
+  /*if (pulseConnected && counterTimeOut > timeOut) { //comentado 8/10
     resetAll();
     pulseConnected = false;
     Serial.println("pulseDisconnected");
-  }
+  }*/
   if (lastPulseConnected != pulseConnected) {
-    if (pulseConnected) {
+    if (pulseConnected) { // EMPROLIJAR ESTO.
       // displayBpm(0);  // 0 == ext clock
       bpmCore2 = 0;
       flagBpm = true;
       // newBpm = true;
       Serial.println("pulseConnected");
+      lfo.setExtClock(true);
     }
+    else{
+      timeOutCounter = 0;
+      lfo.setExtClock(false);
+      resetAll();
+    }
+    Serial.println(pulseConnected);
     lastPulseConnected = pulseConnected;
   }
 
@@ -445,18 +459,31 @@ void loop() {
 void clockInPullUp() {
   clockIn.update();
   static bool flagTimeOut;
-  if (clockIn.rose() && flagTimeOut == false) {
-    timeOutPin = 0;
+  /*if (clockIn.rose() || clockIn.fell()) {
+    timeOutCounter = 0;
     flagTimeOut = true;
-    Serial.println(pulseConnected);
+    // Serial.println("se conecto");
   }
-  if (clockIn.read() == HIGH && timeOutPin > 250 && flagTimeOut) {
+  // if (clockIn.read() == HIGH && timeOutCounter > TIME_OUT_CLOCK_IN && flagTimeOut) {
+  if (timeOutCounter > TIME_OUT_CLOCK_IN && flagTimeOut) {
     flagTimeOut = false;
 
-    pulseConnected = false;
+     pulseConnected = false;
+    // pulsePeriodMsClock
     resetAll();
-    Serial.println(pulseConnected);
+    //Serial.println("se desconecto");
+  }*/
+  if(clockIn.read() == HIGH || clockIn.read() == LOW){
+    //Serial.println(timeOutCounter);
+    if(timeOutCounter > TIME_OUT_CLOCK_IN){
+     // flagTimeOut = false;
+     pulseConnected = false;
+     //resetAll();
+    }
   }
+  //Serial.print(flagTimeOut);
+  //Serial.print(" ");
+   //Serial.println(timeOutCounter);
 }
 void resetAll() {
   lfo.disableSync(0);
@@ -527,7 +554,7 @@ void updatePots() {
       lfo.setRatio(1, ratioLfo2);
     }
   }
-  //bla
+  // bla
   periodFreeRunning2 = fscale(potMult2.getValue(), 0, 1023, 20, 1000, -5);
   // periodFreeRunning2 = fscale(potMult2.getValue(), 1023, 3, 1000, 100, 7);
   if (isFreeRunning2) {
@@ -640,13 +667,13 @@ void tapTempo() {
 
     if (tapBtn.fell() || tapExt.fell()) {
       periodMs = tap.getBeatLength();
-
-      lfo.resetPhase(0);
+      lfo.triggerReset();
+      lfo.resetPhase(0); //esto comentado para sacar el reset
       lfo.resetPhase(1);
       lfo.resetPhaseMaster();
-      lfo.clockFromExt();
+      
 
-      //leds.setPixelColor(LED_CLOCK_IN, leds.Color(255 * LED_BRIGHTNESS, 0, 255 * LED_BRIGHTNESS));
+      // leds.setPixelColor(LED_CLOCK_IN, leds.Color(255 * LED_BRIGHTNESS, 0, 255 * LED_BRIGHTNESS));
       tapLed = 0;
       flagTapLed = true;
       if (!isFreeRunning1) {
@@ -657,13 +684,14 @@ void tapTempo() {
       }
       lfo.setPeriodMsClock(periodMs * COMPENSATION);
       bpm = msToBpm(periodMs);
+      Serial.println(bpm);
       bpmCore2 = bpm;
       flagBpm = true;
       // displayBpm(bpm);
     }
     if (tapLed > 100 && flagTapLed) {
-      //leds.setPixelColor(LED_CLOCK_IN, leds.Color(0, 0, 0));
-      //leds.show();
+      // leds.setPixelColor(LED_CLOCK_IN, leds.Color(0, 0, 0));
+      // leds.show();
       tapLed = 0;
       flagTapLed = false;
     }

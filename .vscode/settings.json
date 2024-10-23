@@ -12,5 +12,6 @@
     "files.associations": {
         "functional": "cpp",
         "cstddef": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "/Users/lu/Proyectos y cursos/TEMPORAL LFO/TEMPORAL LFO/lib/Adafruit_BusIO"
 }
