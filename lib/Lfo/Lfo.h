@@ -17,6 +17,8 @@ class Lfo {
   void resetPhaseMaster();
   void setWave(uint8_t lfoNum, byte wave);
   void enableSync(uint8_t lfoNum);  // si recibe o no sync externo
+  void enableMidi(uint8_t lfoNum);  // si recibe o no midi clock
+  void disableMidi(uint8_t lfoNum);  // si recibe o no midi clock
   void disableSync(uint8_t lfoNum);
   void setTriggerPeriod(uint8_t lfoNum, uint16_t triggerPeriod);
   void setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity);
@@ -39,6 +41,7 @@ class Lfo {
   uint32_t _tableSizeFixedPoint;
   uint32_t _tableSize;
   volatile bool _syncEnabled[2] = {false, false};
+  volatile bool _midiEnabled[2] = {false, false};
   volatile uint32_t _output[2];
   volatile uint8_t _waveSelector[2];
   volatile uint32_t _phaseInc[2];
@@ -78,6 +81,7 @@ class Lfo {
   volatile bool _flagTrigger[2] = {false, false};
   volatile bool _flagTriggerClockOut;
   volatile bool _extClock;
+  volatile bool _midiClock;
   void computeWaveforms();
   void syncOut();
 };

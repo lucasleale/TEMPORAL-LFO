@@ -1,10 +1,13 @@
 // branch lfo24
 // 8/10, sacamos reset, fix sync in, taps 4
-//22/10, volvimos a poner reset, fix double trigger, clock out es thru de clock in, fix auto clock ext
+// 22/10, volvimos a poner reset, fix double trigger, clock out es thru de clock in, fix auto clock ext
+// 23/10 agrega midi clock (usb por ahora), deteccion automatica midi clock, clock ext, int. Emprolijamos algunas cosas
+// como se manda el clock externo, sumamos midienabled, etc.
 #include <Adafruit_GFX.h>
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_NeoPixel.h>
 #include <Adafruit_SSD1306.h>
+#include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
 #include <ArduinoTapTempo.h>
 #include <Bounce2.h>
@@ -15,6 +18,7 @@
 #include <Fonts/Font5x7FixedMono.h>
 #include <Fonts/FreeSans9pt7b.h>
 #include <Lfo.h>
+#include <MIDI.h>
 #include <ResponsiveAnalogRead.h>
 #include <Wire.h>
 // #include <Encoder.h>
@@ -30,6 +34,7 @@
 #define OLED_RESET -1
 #define SCREEN_ADDRESS 0x3C  // CHEQUEAR ADDRESS, PUEDE SER 0x3C o 0x3D
 
+#define MIDI_RX 9
 #define COMPENSATION 1       // 0.9985   // DEJAR EN 1!!!!!
 #define LED_REFRESH 33       // 1000/33 30fps
 #define LED_BRIGHTNESS 0.05  // 0. a 1.
@@ -83,6 +88,10 @@ Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 ResponsiveAnalogRead potMult1(POT1_PIN, true);
 ResponsiveAnalogRead potMult2(POT2_PIN, true);
 Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+Adafruit_USBD_MIDI usb_midi;
+MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI);
+// MIDI_CREATE_INSTANCE(HardwareSerial, Serial2, MIDI); //esta es para din
 ArduinoTapTempo tap;
 Bounce wave1 = Bounce();
 Bounce wave2 = Bounce();
@@ -94,7 +103,7 @@ elapsedMillis btnWaveTime1;
 elapsedMillis btnWaveTime2;
 elapsedMillis ledsFps;
 elapsedMillis timeOutCounter;  // cuanto tiempo estuvo HIGH
-elapsedMillis tapLed;      // duty
+elapsedMillis tapLed;          // duty
 // prototypes
 void updateButtons();
 void updatePots();
@@ -196,11 +205,111 @@ bool flagWave;
 bool flagWave2;
 bool flagFreq;
 bool flagFreq2;
+volatile bool midiClockConnected;
+bool lastMidiClockConnected;
+volatile int timeOutCounterMidi;
+void onClock() {
+  // Serial.println("got clock");
+  // pulseConnected = true;
+  midiClockConnected = true;
+  timeOutCounterMidi = 0;
+  // lfo.resetPhaseMaster();
+  // lfo.resetPhaseMaster();  // reseteamos el master clock interno solo con los pulsos
+  //  antes el reset era igual que los lfos, entonces se triggeaba el clock out con cada syncout
+  // counterTimeOut = 0;     // este es el watchdog, resetea a 0 en todos los pulsos
+  if (!isFreeRunning1) {  // el sync lo activa solo si no esta en free
+    lfo.enableSync(0);
+    lfo.enableMidi(0);
+  }  // mover esto a otro lado...
+  if (!isFreeRunning2) {
+    lfo.enableSync(1);
+    lfo.enableMidi(1);
+  }
+  // if(ratioLfo1 == 1){
+  //   digitalWrite(SYNC1_OUT_PIN, HIGH); //thru
+  //   counterDivTicksLfo1 = 0;
 
+  //}
+
+  if (pulseCounter % 2 == 0) {  // always
+    counterTicksPulse = 0;
+  } else if (pulseCounter % 2 == 1) {  // always
+                                       // pulsePeriod = counter * 0.5; //creo que lo calculamos fuera del timer, aca y en ratio
+
+    pulseTicksLfo1 = counterTicksPulse * ratioLfo1 * 24;
+    pulsePeriodMsClock = counterTicksPulse * SAMPLE_RATE_MS * 24;
+    pulsePeriodMsLfo1 = (counterTicksPulse * SAMPLE_RATE_MS * 24);  //* 1.00120144;
+    pulseTicksLfo2 = counterTicksPulse * ratioLfo2 * 24;
+    // pulsePeriodMsLfo2 = counterTicksPulse * SAMPLE_RATE_MS; //en verdad solo necesito el pulseperiod de uno solo
+    if (!isFreeRunning1) {  // lo mismo aca con el free running
+      lfo.setPeriodMs(0, pulsePeriodMsLfo1);
+    }
+    if (!isFreeRunning2) {
+      lfo.setPeriodMs(1, pulsePeriodMsLfo1);
+    }
+
+    // con el nuevo codigo x24 en vez de resetear cada lfo, reseteamos el master, xq los slaves derivan de el
+    // Serial.println(pulsePeriodMsLfo1);
+
+    gotNewPulse = true;
+  }
+  // lfo.triggerReset();
+  if (pulseCounter % 24 == 0) {  // negra
+    lfo.clockOut(HIGH);
+    lfo.clockFromExt();
+    Serial.println(pulsePeriodMsLfo1);
+    lfo.resetPhaseMaster();
+    lfo.setPeriodMsClock(pulsePeriodMsClock);
+    bpm = msToBpm(pulsePeriodMsClock);  // para que si se saca la sincro recuerde el bpm... MEJORAR EMPROLIJAR
+    tap.setBPM(bpm);
+  }
+  // Serial.println(pulsePeriodMsClock * 24);
+
+  if (pulseCounter % int(ceil(ratioLfo1 * 24)) == 0) {  // * 24 ppqn
+    // counterTicksPulse = 0;
+    //  digitalWrite(17, HIGH);
+    counterDivTicksLfo1 = 0;
+    Serial.println("LFO1");
+  }
+  if (pulseCounter % int(ceil(ratioLfo2 * 24)) == 0) {
+    // counterTicksPulse = 0;
+    //  digitalWrite(17, HIGH);
+    Serial.println("LFO2");
+    counterDivTicksLfo2 = 0;
+  }
+  if (pulseCounter % 24 == 0) {
+    // clock thru.
+  }
+  if (pulseCounter % 24 == 2) {
+    lfo.clockOut(LOW);
+  }
+
+  pulseCounter++;
+}
+void onStart() {
+  midiClockConnected = true;
+  pulseConnected = false;
+  pulseCounter = 0;
+  lfo.clockOut(HIGH);
+  lfo.clockFromExt();
+  counterTicksPulse = 0;
+  counterDivTicksLfo1 = 0;
+  counterDivTicksLfo2 = 0;
+  counterDivTicksLfo1 = 0;
+  counterDivTicksLfo2 = 0;
+  lfo.resetPhaseMaster();
+  lfo.resetPhase(0);
+  lfo.resetPhase(1);
+}
 void setup() {
-  // Serial.begin(9600);
+  Serial.begin(115200);
+  Serial2.setRX(MIDI_RX);
+  Serial2.setTX(8);
+  MIDI.begin();
+  MIDI.setHandleClock(onClock);
+  MIDI.setHandleStart(onStart);
   encoder.begin();
-  encoder.flip();
+  // encoder.flip();
   analogWriteFreq(PWM_FREQ);
   analogWriteRange(PWM_RANGE);
   pinMode(BUILTIN_LED, OUTPUT);
@@ -213,6 +322,8 @@ void setup() {
   pinMode(SYNC1_OUT_PIN, OUTPUT);
   pinMode(SYNC2_OUT_PIN, OUTPUT);
   pinMode(CLOCK_IN_PIN, INPUT_PULLUP);
+  pinMode(7, INPUT);  // dummy pin GP7 a GP9 RX
+  // pinMode(9, INPUT);
   wave1.attach(BTN1_PIN, INPUT_PULLUP);
   wave2.attach(BTN2_PIN, INPUT_PULLUP);
   wave1.interval(25);
@@ -259,67 +370,69 @@ void setup() {
   // displayBpm(120.0);
 }
 void syncPulse() {
-  pulseConnected = true;
-  timeOutCounter = 0;
-  // lfo.resetPhaseMaster();
-  // lfo.resetPhaseMaster();  // reseteamos el master clock interno solo con los pulsos
-  //  antes el reset era igual que los lfos, entonces se triggeaba el clock out con cada syncout
-  //counterTimeOut = 0;     // este es el watchdog, resetea a 0 en todos los pulsos
-  if (!isFreeRunning1) {  // el sync lo activa solo si no esta en free
-    lfo.enableSync(0);
-  }  // mover esto a otro lado...
-  if (!isFreeRunning2) {
-    lfo.enableSync(1);
-  }
-  // if(ratioLfo1 == 1){
-  //   digitalWrite(SYNC1_OUT_PIN, HIGH); //thru
-  //   counterDivTicksLfo1 = 0;
-
-  //}
-
-  if (pulseCounter % 2 == 0) {  // always
-    counterTicksPulse = 0;
-  } else if (pulseCounter % 2 == 1) {  // always
-    // pulsePeriod = counter * 0.5; //creo que lo calculamos fuera del timer, aca y en ratio
-
-    if (counterTicksPulse > 400) {  // que tome como pulso valido si es mayor al umbral de bounce
-      pulseTicksLfo1 = counterTicksPulse * ratioLfo1;
-      pulsePeriodMsClock = counterTicksPulse * SAMPLE_RATE_MS;
-      pulsePeriodMsLfo1 = (counterTicksPulse * SAMPLE_RATE_MS);  //* 1.00120144;
-      pulseTicksLfo2 = counterTicksPulse * ratioLfo2;
-      // pulsePeriodMsLfo2 = counterTicksPulse * SAMPLE_RATE_MS; //en verdad solo necesito el pulseperiod de uno solo
-      if (!isFreeRunning1) {  // lo mismo aca con el free running
-        lfo.setPeriodMs(0, pulsePeriodMsLfo1);
-      }
-      if (!isFreeRunning2) {
-        lfo.setPeriodMs(1, pulsePeriodMsLfo1);
-      }
-
-      // con el nuevo codigo x24 en vez de resetear cada lfo, reseteamos el master, xq los slaves derivan de el
-      // Serial.println(pulsePeriodMsLfo1);
-
-      gotNewPulse = true;
+  if (!midiClockConnected) {  // midi clock tiene prioridad
+    pulseConnected = true;
+    timeOutCounter = 0;
+    // lfo.resetPhaseMaster();
+    // lfo.resetPhaseMaster();  // reseteamos el master clock interno solo con los pulsos
+    //  antes el reset era igual que los lfos, entonces se triggeaba el clock out con cada syncout
+    // counterTimeOut = 0;     // este es el watchdog, resetea a 0 en todos los pulsos
+    if (!isFreeRunning1) {  // el sync lo activa solo si no esta en free
+      lfo.enableSync(0);
+    }  // mover esto a otro lado...
+    if (!isFreeRunning2) {
+      lfo.enableSync(1);
     }
-  }
-  //lfo.triggerReset();
-  lfo.clockFromExt();
-  lfo.resetPhaseMaster();
-  lfo.setPeriodMsClock(pulsePeriodMsClock);
-  Serial.println(pulsePeriodMsClock);
-  
+    // if(ratioLfo1 == 1){
+    //   digitalWrite(SYNC1_OUT_PIN, HIGH); //thru
+    //   counterDivTicksLfo1 = 0;
 
-  if (pulseCounter % int(ceil(ratioLfo1 * multiplierSyncLfo1)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
-    // counterTicksPulse = 0;
-    //  digitalWrite(17, HIGH);
-    counterDivTicksLfo1 = 0;
-  }
-  if (pulseCounter % int(ceil(ratioLfo2 * multiplierSyncLfo2)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
-    // counterTicksPulse = 0;
-    //  digitalWrite(17, HIGH);
-    counterDivTicksLfo2 = 0;
-  }
+    //}
 
-  pulseCounter++;
+    if (pulseCounter % 2 == 0) {  // always
+      counterTicksPulse = 0;
+    } else if (pulseCounter % 2 == 1) {  // always
+      // pulsePeriod = counter * 0.5; //creo que lo calculamos fuera del timer, aca y en ratio
+
+      if (counterTicksPulse > 400) {  // que tome como pulso valido si es mayor al umbral de bounce
+        pulseTicksLfo1 = counterTicksPulse * ratioLfo1;
+        pulsePeriodMsClock = counterTicksPulse * SAMPLE_RATE_MS;
+        pulsePeriodMsLfo1 = (counterTicksPulse * SAMPLE_RATE_MS);  //* 1.00120144;
+        pulseTicksLfo2 = counterTicksPulse * ratioLfo2;
+        // pulsePeriodMsLfo2 = counterTicksPulse * SAMPLE_RATE_MS; //en verdad solo necesito el pulseperiod de uno solo
+        if (!isFreeRunning1) {  // lo mismo aca con el free running
+          lfo.setPeriodMs(0, pulsePeriodMsLfo1);
+        }
+        if (!isFreeRunning2) {
+          lfo.setPeriodMs(1, pulsePeriodMsLfo1);
+        }
+
+        // con el nuevo codigo x24 en vez de resetear cada lfo, reseteamos el master, xq los slaves derivan de el
+        // Serial.println(pulsePeriodMsLfo1);
+
+        gotNewPulse = true;
+      }
+    }
+    // lfo.triggerReset();
+    lfo.clockFromExt();
+    lfo.resetPhaseMaster();
+    lfo.setPeriodMsClock(pulsePeriodMsClock);
+    Serial.println(pulsePeriodMsClock);
+    bpm = msToBpm(pulsePeriodMsClock);
+    tap.setBPM(bpm);
+    if (pulseCounter % int(ceil(ratioLfo1 * multiplierSyncLfo1)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
+      // counterTicksPulse = 0;
+      //  digitalWrite(17, HIGH);
+      counterDivTicksLfo1 = 0;
+    }
+    if (pulseCounter % int(ceil(ratioLfo2 * multiplierSyncLfo2)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
+      // counterTicksPulse = 0;
+      //  digitalWrite(17, HIGH);
+      counterDivTicksLfo2 = 0;
+    }
+
+    pulseCounter++;
+  }
 }
 //// TIMER INTERRUPT PARA LFO Y TICK COUNTER PULSE////
 
@@ -334,9 +447,11 @@ static void alarm_irq(void) {
 
   lfo.update();
 
-  if (pulseConnected) {
-    bool clockInState = digitalRead(CLOCK_IN_PIN);
-    lfo.clockOut(clockInState); //clock thru.
+  if (pulseConnected || midiClockConnected) {
+    if (pulseConnected) {
+      bool clockInState = digitalRead(CLOCK_IN_PIN);
+      lfo.clockOut(clockInState);  // clock thru.
+    }
     if (counterDivTicksLfo1 % pulseTicksLfo1 == 0) {  // LFO1
       if (newTriggerLfo1) {
         // digitalWrite(SYNC1_OUT_PIN, HIGH);
@@ -370,7 +485,13 @@ static void alarm_irq(void) {
     counterTicksPulse++;
     counterDivTicksLfo1++;
     counterDivTicksLfo2++;
-    //counterTimeOut++;
+    // counterTimeOut++;
+    if (midiClockConnected) {
+      timeOutCounterMidi++;
+      if (timeOutCounterMidi > 5000) {
+        midiClockConnected = false;
+      }
+    }
   }
 }
 
@@ -382,6 +503,7 @@ static void alarm_in_us(uint32_t delay_us) {
 }
 //// FIN TIMER INTERRUPT PARA LFO ////
 void loop() {
+  MIDI.read();
   updatePots();
   updateButtons();
   updateEncoderBpm();
@@ -427,21 +549,43 @@ void loop() {
     Serial.println("pulseDisconnected");
   }*/
   if (lastPulseConnected != pulseConnected) {
-    if (pulseConnected) { // EMPROLIJAR ESTO.
+    if (pulseConnected) {  // EMPROLIJAR ESTO.
       // displayBpm(0);  // 0 == ext clock
       bpmCore2 = 0;
       flagBpm = true;
       // newBpm = true;
       Serial.println("pulseConnected");
       lfo.setExtClock(true);
-    }
-    else{
+    } else {
       timeOutCounter = 0;
       lfo.setExtClock(false);
-      resetAll();
+      if (!midiClockConnected) {  // que vuelva a resetear todo si no hay midi clock
+        resetAll();
+      }
     }
     Serial.println(pulseConnected);
     lastPulseConnected = pulseConnected;
+  }
+  if (lastMidiClockConnected != midiClockConnected) {
+    if (midiClockConnected) {  // EMPROLIJAR ESTO.
+      // displayBpm(0);  // 0 == ext clock
+      bpmCore2 = -1;  // midi
+      flagBpm = true;
+      // newBpm = true;
+      Serial.println("midiClockConnected");
+      lfo.setExtClock(true);
+      lfo.enableMidi(0);
+      lfo.enableMidi(1);
+    } else {
+      timeOutCounterMidi = 0;
+      lfo.setExtClock(false);
+      lfo.disableMidi(0);
+      lfo.disableMidi(1);
+      Serial.println("midiClockDisconnected");
+      resetAll();
+    }
+    Serial.println(midiClockConnected);
+    lastMidiClockConnected = midiClockConnected;
   }
 
   // Serial.println(counterTimeOut);
@@ -473,17 +617,17 @@ void clockInPullUp() {
     resetAll();
     //Serial.println("se desconecto");
   }*/
-  if(clockIn.read() == HIGH || clockIn.read() == LOW){
-    //Serial.println(timeOutCounter);
-    if(timeOutCounter > TIME_OUT_CLOCK_IN){
-     // flagTimeOut = false;
-     pulseConnected = false;
-     //resetAll();
+  if (clockIn.read() == HIGH || clockIn.read() == LOW) {
+    // Serial.println(timeOutCounter);
+    if (timeOutCounter > TIME_OUT_CLOCK_IN) {
+      // flagTimeOut = false;
+      pulseConnected = false;
+      // resetAll();
     }
   }
-  //Serial.print(flagTimeOut);
-  //Serial.print(" ");
-   //Serial.println(timeOutCounter);
+  // Serial.print(flagTimeOut);
+  // Serial.print(" ");
+  // Serial.println(timeOutCounter);
 }
 void resetAll() {
   lfo.disableSync(0);
@@ -660,7 +804,7 @@ void updateButtons() {
 
 void tapTempo() {
   static bool flagTapLed;
-  if (!pulseConnected) {
+  if (!pulseConnected && !midiClockConnected) {
     tapBtn.update();
     tapState = tapBtn.read() ^ tapExt.read();  // deberia ser OR pero como es invertido usamos XOR.
     tap.update(tapState);
@@ -668,10 +812,9 @@ void tapTempo() {
     if (tapBtn.fell() || tapExt.fell()) {
       periodMs = tap.getBeatLength();
       lfo.triggerReset();
-      lfo.resetPhase(0); //esto comentado para sacar el reset
+      lfo.resetPhase(0);  // esto comentado para sacar el reset
       lfo.resetPhase(1);
       lfo.resetPhaseMaster();
-      
 
       // leds.setPixelColor(LED_CLOCK_IN, leds.Color(255 * LED_BRIGHTNESS, 0, 255 * LED_BRIGHTNESS));
       tapLed = 0;
@@ -708,7 +851,7 @@ float msToBpm(float period) {
 }
 
 void updateBpm() {
-  if (!pulseConnected) {
+  if (!pulseConnected && !midiClockConnected) {
     periodMs = bpmToMs(bpm);
     if (!isFreeRunning1) {  // si no me modifica la freq de los lfo en free running
       lfo.setPeriodMs(0, periodMs * COMPENSATION);
@@ -737,7 +880,7 @@ void updateEncoderBpm() {
       // Serial.println("baja");
       encoderResult = -1;
     }
-    if (!pulseConnected) {  // que lo refresque si no hay clock externo
+    if (!pulseConnected || !midiClockConnected) {  // que lo refresque si no hay clock externo
       bpm += encoderResult;
     }
     if (bpm >= MAX_BPM) {
@@ -774,6 +917,11 @@ void updateTempoLed() {
       leds.setPixelColor(LED_ENCODER1, leds.Color(0, 255 * ledTempo * LED_BRIGHTNESS_ENC, 0));
       leds.setPixelColor(LED_ENCODER2, leds.Color(0, 255 * ledTempo * LED_BRIGHTNESS_ENC, 0));
 
+    } else if (midiClockConnected) {
+      // leds.setPixelColor(LED_CLOCK_IN, leds.Color(255 * ledTempo * LED_BRIGHTNESS_ENC, 255 * ledTempo * LED_BRIGHTNESS, 0));
+      leds.setPixelColor(LED_ENCODER1, leds.Color(255 * ledTempo * LED_BRIGHTNESS_ENC, 255 * ledTempo * LED_BRIGHTNESS_ENC, 0));
+      leds.setPixelColor(LED_ENCODER2, leds.Color(255 * ledTempo * LED_BRIGHTNESS_ENC, 255 * ledTempo * LED_BRIGHTNESS_ENC, 0));
+
     } else {
       leds.setPixelColor(LED_ENCODER1, leds.Color(0, 0, 255 * ledTempo * LED_BRIGHTNESS_ENC));
       leds.setPixelColor(LED_ENCODER2, leds.Color(0, 0, 255 * ledTempo * LED_BRIGHTNESS_ENC));
@@ -788,10 +936,12 @@ void displayBpm(float bpm) {
   oled.setCursor(0, 8);
   oled.fillRect(0, 0, 63, 22, BLACK);
   oled.setTextSize(2);
-  if (bpm != 0) {  // si no es bpm 0 es bpm, si no es EXT.
+  if (bpm != 0 && bpm != -1) {  // si no es bpm 0 es bpm, si no es EXT.
     oled.print(bpm, 1);
-  } else {
-    oled.print("EXT");
+  } else if (bpm == 0) {
+    oled.print("EXT ");
+  } else if (bpm == -1) {
+    oled.print("MIDI");
   }
   oled.display();
   // flagBpm = false;

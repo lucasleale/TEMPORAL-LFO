@@ -11,7 +11,8 @@
     "C_Cpp.default.compilerPath": "/Users/lu/.platformio/packages/framework-arduinopico/pico-sdk/**",
     "files.associations": {
         "functional": "cpp",
-        "cstddef": "cpp"
+        "cstddef": "cpp",
+        "cmath": "cpp"
     },
     "cmake.sourceDirectory": "/Users/lu/Proyectos y cursos/TEMPORAL LFO/TEMPORAL LFO/lib/Adafruit_BusIO"
 }

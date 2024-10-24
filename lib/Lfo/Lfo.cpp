@@ -80,7 +80,7 @@ void Lfo::update() {
     if (_extClock == false) {
       if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
         digitalWrite(_clockOutPin, LOW);
-        _clockOutValue = LOW;
+        _clockOutValue = 0;
         _triggerCounterClockOut = 0;
         _flagTriggerClockOut = false;
       }
@@ -155,16 +155,18 @@ void Lfo::update() {
         _triggerCounterClockOut = 0;
         if (_extClock == false) {
           digitalWrite(_clockOutPin, HIGH);
-        }
+        
         _clockOutValue = 1;
+        }
         _flagTriggerClockOut = true;
       }
     }
     if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
       if (_extClock == false) {
         digitalWrite(_clockOutPin, LOW);
-      }
+      
       _clockOutValue = LOW;
+      }
       _triggerCounterClockOut = 0;
       _flagTriggerClockOut = false;
     }
@@ -500,6 +502,14 @@ void Lfo::enableSync(uint8_t lfoNum) {
 void Lfo::disableSync(uint8_t lfoNum) {
   _syncEnabled[lfoNum] = false;
 }
+void Lfo::enableMidi(uint8_t lfoNum) {
+  _midiEnabled[lfoNum] = true;
+  _midiClock = true;
+}
+void Lfo::disableMidi(uint8_t lfoNum) {
+  _midiEnabled[lfoNum] = false;
+  _midiClock = false;
+}
 void Lfo::turnFreeRunning(uint8_t lfoNum, bool toggle) {
   if (lfoNum < 2) {
     _freeRunning[lfoNum] = toggle;
@@ -524,8 +534,9 @@ void Lfo::setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity) {
 }
 
 void Lfo::clockOut(bool state){
-  if(_extClock){
+  if(_extClock || _midiClock){
     digitalWrite(_clockOutPin, state);
+    _clockOutValue = state;
   }
 
 }
