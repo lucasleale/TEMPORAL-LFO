@@ -442,15 +442,17 @@ void syncPulse() {
 
       if (counterTicksPulse > 400) {  // que tome como pulso valido si es mayor al umbral de bounce
         pulseTicksLfo1 = counterTicksPulse * ratioLfo1;
-        pulsePeriodMsClock = counterTicksPulse * SAMPLE_RATE_MS;
+        pulsePeriodMsClock = calculateMedian(counterTicksPulse * SAMPLE_RATE_MS);
         pulsePeriodMsLfo1 = (counterTicksPulse * SAMPLE_RATE_MS);  //* 1.00120144;
         pulseTicksLfo2 = counterTicksPulse * ratioLfo2;
         // pulsePeriodMsLfo2 = counterTicksPulse * SAMPLE_RATE_MS; //en verdad solo necesito el pulseperiod de uno solo
         if (!isFreeRunning1) {  // lo mismo aca con el free running
-          lfo.setPeriodMs(0, pulsePeriodMsLfo1);
+          //lfo.setPeriodMs(0, pulsePeriodMsLfo1);
+          lfo.setPeriodMs(0, pulsePeriodMsClock);
         }
         if (!isFreeRunning2) {
-          lfo.setPeriodMs(1, pulsePeriodMsLfo1);
+          //lfo.setPeriodMs(1, pulsePeriodMsLfo1);
+          lfo.setPeriodMs(1, pulsePeriodMsClock);
         }
 
         // con el nuevo codigo x24 en vez de resetear cada lfo, reseteamos el master, xq los slaves derivan de el
@@ -465,7 +467,7 @@ void syncPulse() {
     lfo.setPeriodMsClock(pulsePeriodMsClock);
     Serial.println(pulsePeriodMsClock);
    
-    bpm = calculateMedian(msToBpm(pulsePeriodMsClock));
+    bpm = msToBpm(pulsePeriodMsClock);
     tap.setBPM(bpm);
     if (pulseCounter % int(ceil(ratioLfo1 * multiplierSyncLfo1)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
       // counterTicksPulse = 0;
