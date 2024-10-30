@@ -118,6 +118,8 @@ void clockInPullUp();
 float msToBpm(float period);
 float bpmToMs(float bpm);
 void syncPulse();
+float calculateMedian(float newReading);
+void sort(float* start, float* end);
 static void alarm_in_us_arm(uint32_t delay_us);
 static void alarm_irq(void);
 static void alarm_in_us(uint32_t delay_us);
@@ -208,6 +210,47 @@ bool flagFreq2;
 volatile bool midiClockConnected;
 bool lastMidiClockConnected;
 volatile int timeOutCounterMidi;
+float calculateMedian(float newReading) {
+  const int bufferSize = 8;
+  static float readings[bufferSize] = {0};  // Array to store readings
+  static int currentIndex = 0;              // Index to store the next reading
+  static int totalReadings = 0;             // Total number of readings received so far (max 8)
+
+  // Store the new reading at the current position
+  readings[currentIndex] = newReading;
+  currentIndex = (currentIndex + 1) % bufferSize;
+
+  // Increase the total reading count until it reaches the buffer size
+  if (totalReadings < bufferSize) {
+    totalReadings++;
+  }
+
+  // Sort a copy of the readings array to calculate the median
+  float sortedReadings[bufferSize];
+  memcpy(sortedReadings, readings, sizeof(readings));  // Copy readings to a new array
+  sort(sortedReadings, sortedReadings + totalReadings);  // Sort the copied array
+
+  // Return the median value
+  if (totalReadings % 2 == 1) {
+    return sortedReadings[totalReadings / 2];  // If odd, return the middle value
+  } else {
+    return (sortedReadings[(totalReadings / 2) - 1] + sortedReadings[totalReadings / 2]) / 2.0;  // If even, return the average of the two middle values
+  }
+}
+
+void sort(float* start, float* end) {
+  // Simple bubble sort (you could replace this with a more efficient sorting algorithm if needed)
+  for (float* i = start; i != end; ++i) {
+    for (float* j = i + 1; j != end; ++j) {
+      if (*i > *j) {
+        float temp = *i;
+        *i = *j;
+        *j = temp;
+      }
+    }
+  }
+}
+
 void onClock() {
   // Serial.println("got clock");
   // pulseConnected = true;
@@ -254,10 +297,13 @@ void onClock() {
     gotNewPulse = true;
   }
   // lfo.triggerReset();
-  if (pulseCounter % 24 == 0) {  // negra
-    lfo.clockOut(HIGH);
+  if (pulseCounter % 24 == 0) {  // negra. El clock out es thru tanto en midi como clock ext.
+    lfo.clockOut(HIGH); // la polaridad la seteamos en la clase
     lfo.clockFromExt();
-    Serial.println(pulsePeriodMsLfo1);
+    
+    //Serial.print(calculateMedian(pulsePeriodMsClock));
+    //Serial.print("  ");
+    //Serial.println(pulsePeriodMsLfo1);
     lfo.resetPhaseMaster();
     lfo.setPeriodMsClock(pulsePeriodMsClock);
     bpm = msToBpm(pulsePeriodMsClock);  // para que si se saca la sincro recuerde el bpm... MEJORAR EMPROLIJAR
@@ -280,7 +326,7 @@ void onClock() {
   if (pulseCounter % 24 == 0) {
     // clock thru.
   }
-  if (pulseCounter % 24 == 2) {
+  if (pulseCounter % 24 == 2) { //2 pulsos de duty clock out
     lfo.clockOut(LOW);
   }
 
@@ -418,7 +464,8 @@ void syncPulse() {
     lfo.resetPhaseMaster();
     lfo.setPeriodMsClock(pulsePeriodMsClock);
     Serial.println(pulsePeriodMsClock);
-    bpm = msToBpm(pulsePeriodMsClock);
+   
+    bpm = calculateMedian(msToBpm(pulsePeriodMsClock));
     tap.setBPM(bpm);
     if (pulseCounter % int(ceil(ratioLfo1 * multiplierSyncLfo1)) == 0) {  // solo cuando ratio es mayor a 1. o alguna irregular tresillo punti
       // counterTicksPulse = 0;
