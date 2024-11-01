@@ -12,7 +12,14 @@
     "files.associations": {
         "functional": "cpp",
         "cstddef": "cpp",
-        "cmath": "cpp"
+        "cmath": "cpp",
+        "optional": "cpp",
+        "ostream": "cpp",
+        "system_error": "cpp",
+        "array": "cpp",
+        "tuple": "cpp",
+        "type_traits": "cpp",
+        "utility": "cpp"
     },
     "cmake.sourceDirectory": "/Users/lu/Proyectos y cursos/TEMPORAL LFO/TEMPORAL LFO/lib/Adafruit_BusIO"
 }
