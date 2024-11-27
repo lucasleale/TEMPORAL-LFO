@@ -129,10 +129,10 @@ static void alarm_in_us_arm(uint32_t delay_us);
 static void alarm_irq(void);
 static void alarm_in_us(uint32_t delay_us);
 
-const float multipliers[] = {0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4., 8., 16.};  // era 0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4.
+const float multipliers[] = {0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4., 8., 16., 32.};  // era 0.25, 0.5, 0.66666, 1., 1.5, 2, 3., 4.
 const uint8_t numMultipliers = (sizeof(multipliers) / sizeof(byte*));
-const uint8_t multipliersSync[numMultipliers] = {4, 2, 6, 1, 2, 1, 1, 1, 1, 1};  // era 4,2,6,1,2,1,1,1
-const char* multipliersOled[numMultipliers] = {"1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   ", "2   ", "4   "};
+const uint8_t multipliersSync[numMultipliers] = {4, 2, 6, 1, 2, 1, 1, 1, 1, 1, 1};  // era 4,2,6,1,2,1,1,1
+const char* multipliersOled[numMultipliers] = {"1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   ", "2   ", "4   ","8   "};
 // era "1/16", "1/8 ", "1/4t", "1/4 ", "1/4*", "1/2 ", "1/2*", "1   "
 const uint8_t oledX = 16;
 const float oledCycles = 2;
