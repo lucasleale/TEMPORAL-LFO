@@ -68,19 +68,28 @@ void Lfo::update() {
         }
       }
       if (_extClock == false) {
-        if (_masterTicks % 24 == 0) {
+        if (_masterTicks % (24 / _ppqn) == 0) {
           _triggerCounterClockOut = 0;
-          digitalWrite(_clockOutPin, HIGH);
+          _ppqnCount;  // para separar led de clock out ppqn sin hacer nada nuevo
 
-          _clockOutValue = 1;
+          digitalWrite(_clockOutPin, _clockOn);  // new
+          _ppqnCount++;
+          if (_ppqnCount % _ppqn == 0) {
+            _clockOutValueLed = 1;  // always POS
+          }
+          
+
+          _clockOutValue = _clockOn;
+
           _flagTriggerClockOut = true;
         }
       }
     }
     if (_extClock == false) {
       if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
-        digitalWrite(_clockOutPin, LOW);
-        _clockOutValue = 0;
+        digitalWrite(_clockOutPin, _clockOff);
+        _clockOutValue = _clockOff;
+        _clockOutValueLed = 0;  // always NEG
         _triggerCounterClockOut = 0;
         _flagTriggerClockOut = false;
       }
@@ -154,18 +163,18 @@ void Lfo::update() {
       if (_masterTicks % 24 == 0) {
         _triggerCounterClockOut = 0;
         if (_extClock == false) {
-          digitalWrite(_clockOutPin, HIGH);
-        
-        _clockOutValue = 1;
+          // digitalWrite(_clockOutPin, HIGH);
+
+          //_clockOutValue = 1;
         }
         _flagTriggerClockOut = true;
       }
     }
     if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
       if (_extClock == false) {
-        digitalWrite(_clockOutPin, LOW);
-      
-      _clockOutValue = LOW;
+        // digitalWrite(_clockOutPin, LOW);
+
+        //_clockOutValue = LOW;
       }
       _triggerCounterClockOut = 0;
       _flagTriggerClockOut = false;
@@ -355,7 +364,11 @@ int Lfo::getLfoValuesPWM(uint8_t lfoNum) {
 }
 
 bool Lfo::getClockOut() {
-  return _clockOutValue;
+  if (_extClock || _midiClock) {
+    return _clockOutValue;
+  } else {
+    return _clockOutValueLed;
+  }
 }
 void Lfo::setFreqHz(uint8_t lfoNum, float freq) {
   _phaseInc[lfoNum] = _ticksCycle * freq;
@@ -429,6 +442,7 @@ void Lfo::resetPhaseMaster() {
 
   _masterTicks = 0;  // comentado 22/10/24
   _phaseAccMaster = 0;
+  _ppqnCount = 0;
 
   /*_triggerCounterClockOut = 0;  // esto es importante para que no se olvide ningun pulso *1
   digitalWrite(_clockOutPin, HIGH);
@@ -449,8 +463,11 @@ void Lfo::triggerReset() {
     _masterTicks = 0;
     _phaseAccMaster = 0;
     _triggerCounterClockOut = 0;  // esto es importante para que no se olvide ningun pulso *1
-    digitalWrite(_clockOutPin, HIGH);
+    digitalWrite(_clockOutPin, _clockOn);
+
     _clockOutValue = 1;
+    _ppqnCount = 0;
+    _clockOutValueLed = 1;
     _flagTriggerClockOut = true;
   }
 }
@@ -460,6 +477,7 @@ void Lfo::clockFromExt() {
   _masterTicks = 0;
   _phaseAccMaster = 0;
   _triggerCounterClockOut = 0;  // esto es importante para que no se olvide ningun pulso *1
+  _ppqnCount = 0;
   // digitalWrite(_clockOutPin, HIGH);
   _clockOutValue = 1;
   _flagTriggerClockOut = true;
@@ -478,7 +496,7 @@ void Lfo::resetPhase(uint8_t lfoNum) {
   _masterTicks = 0;
   _phaseAcc[lfoNum] = 0;
   _phaseAcc12b[lfoNum] = 0;
-
+  _ppqnCount = 0;
   _phaseAccMaster = 0;
   //_output[lfoNum] = random(0, 4096);
   // analogWrite(_lfoPins[lfoNum], _output[lfoNum] >> _rangeShift);
@@ -532,13 +550,19 @@ void Lfo::setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity) {
   _triggerOn[lfoNum] = triggerPolarity;
   _triggerOff[lfoNum] = 1 - triggerPolarity;
 }
+void Lfo::setClockPolarity(bool clockPolarity) {
+  _clockOn = clockPolarity;
+  _clockOff = 1 - clockPolarity;
+}
+void Lfo::setClockPPQN(byte ppqn) {
+  _ppqn = ppqn;
+}
 
-void Lfo::clockOut(bool state){
-  if(_extClock || _midiClock){
+void Lfo::clockOut(bool state) {
+  if (_extClock || _midiClock) {
     digitalWrite(_clockOutPin, state);
     _clockOutValue = state;
   }
-
 }
 /*
 Lfo::Lfo(volatile byte lfoPin, uint32_t sampleRate, uint32_t tableSize) {

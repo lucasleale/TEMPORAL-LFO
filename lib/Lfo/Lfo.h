@@ -22,6 +22,8 @@ class Lfo {
   void disableSync(uint8_t lfoNum);
   void setTriggerPeriod(uint8_t lfoNum, uint16_t triggerPeriod);
   void setTriggerPolarity(uint8_t lfoNum, bool triggerPolarity);
+  void setClockPolarity(bool clockPolarity);
+  void setClockPPQN(byte ppqn);
   void turnFreeRunning(uint8_t lfoNum, bool toggle);
   int getLfoValues(uint8_t lfoNum);
   int getLfoValuesPWM(uint8_t lfoNum);
@@ -75,13 +77,19 @@ class Lfo {
   volatile uint32_t _triggerPeriodClockOut = 200;
   
   volatile bool _clockOutValue;
+   volatile bool _clockOutValueLed;
   volatile bool _triggerOn[2] = {1, 1};
+  volatile bool _clockOn;
+  volatile bool _clockOff;
   volatile bool _triggerOff[2] = {0, 0};
   volatile bool _freeRunning[2] = {0, 0};
   volatile bool _flagTrigger[2] = {false, false};
   volatile bool _flagTriggerClockOut;
   volatile bool _extClock;
   volatile bool _midiClock;
+  volatile byte _ppqn;
+
+volatile int _ppqnCount;
   void computeWaveforms();
   void syncOut();
 };
