@@ -32,6 +32,7 @@ class Lfo {
   bool getClockOut();
   void setExtClock(bool state);
   void clockOut(bool state);
+  int hasMidiClock();
   // void syncEnabled(uint8_t lfoNum);
  private:
   volatile uint8_t _lfoPin1;
@@ -90,6 +91,7 @@ class Lfo {
   volatile byte _ppqn;
 
 volatile int _ppqnCount;
+bool _midiTick;
   void computeWaveforms();
   void syncOut();
 };

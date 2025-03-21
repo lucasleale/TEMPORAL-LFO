@@ -54,6 +54,7 @@ void Lfo::update() {
       // Serial.println(_phaseAcc[0]);
       _phaseAccMaster -= _tableSizeFixedPoint;
       _masterTicks++;
+      
       for (int lfoN = 0; lfoN < 2; lfoN++) {
         if (!_freeRunning[lfoN]) {
           if (_masterTicks % int(ceil(_ratio24[lfoN])) == 0) {  // masterticks incrementa 1 en cada ciclo del master, con modulo derivan slaves
@@ -68,6 +69,8 @@ void Lfo::update() {
         }
       }
       if (_extClock == false) {
+        _midiTick = true; //send midi clock
+        //Serial.println("miditick");
         if (_masterTicks % (24 / _ppqn) == 0) {
           _triggerCounterClockOut = 0;
           _ppqnCount;  // para separar led de clock out ppqn sin hacer nada nuevo
@@ -77,7 +80,6 @@ void Lfo::update() {
           if (_ppqnCount % _ppqn == 0) {
             _clockOutValueLed = 1;  // always POS
           }
-          
 
           _clockOutValue = _clockOn;
 
@@ -160,6 +162,9 @@ void Lfo::update() {
     if (_phaseAccMaster > _tableSizeFixedPoint) {  // master phasor. Va x24 veces mas rapido. Los lfo1 y lfo2 derivan de aca contando cada cycleÏ
       _phaseAccMaster -= _tableSizeFixedPoint;
       _masterTicks++;
+      if(_midiClock == false){
+      _midiTick = true; //el midi clock tambien va cuando esta en sync pero sin midi clock in (midi clock in es midi thru)
+      }
       if (_masterTicks % 24 == 0) {
         _triggerCounterClockOut = 0;
         if (_extClock == false) {
@@ -190,40 +195,7 @@ void Lfo::update() {
     _triggerCounterClockOut++;*/
   }
 
-  /*if (_phaseAccClockOut == 0) {
-    _triggerCounterClockOut = 0;
-    digitalWrite(_clockOutPin, HIGH);
-    _clockOutValue = HIGH;
-    _flagTriggerClockOut = true;
-  }
-  _phaseAccClockOut += _phaseIncClockOut;
-
-  if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
-    digitalWrite(_clockOutPin, LOW);
-    _clockOutValue = LOW;
-    _triggerCounterClockOut = 0;
-    _flagTriggerClockOut = false;
-  }
-  _triggerCounterClockOut++;
-  if (_phaseAccClockOut > _tableSizeFixedPoint) {  // al final para hardsync y eso usamos como base el master clock out.
-    //////////CLOCKOUT
-    if (_freeRunning[0] == false) {
-      if (_lastRatio[0] != _ratio[0]) {  // if (phaseIncChange) { //mmm para el cambio de ratio y lock no funciona bien aca
-        //_phaseAcc[0] = 0;                // cycle mode force reset
-
-        //_lastRatio[0] = _ratio[0];
-      }
-    }
-    if (_freeRunning[1] == false) {
-      if (_lastRatio[1] != _ratio[1]) {  // if (phaseIncChange) {
-        //_phaseAcc[1] = 0;                // cycle mode force reset
-
-        //_lastRatio[1] = _ratio[1];
-      }
-    }
-    ///////////////////
-    _phaseAccClockOut = 0;
-  }*/
+  
   // analogWrite(_lfoPins[0], _output[0] >> _rangeShift);
   // analogWrite(_lfoPins[0], SIN[_phaseAcc12b[0]] >> _rangeShift);
 
@@ -370,6 +342,18 @@ bool Lfo::getClockOut() {
     return _clockOutValueLed;
   }
 }
+int Lfo::hasMidiClock() {
+  // if(!_midiTick)
+  //if(!_midiTick) return false;
+  bool _midiTickTemp = _midiTick;
+  if(_midiTickTemp){
+  //Serial.println(_midiTickTemp);
+  }
+  _midiTick = false;
+  
+  return _midiTickTemp;
+  
+}
 void Lfo::setFreqHz(uint8_t lfoNum, float freq) {
   _phaseInc[lfoNum] = _ticksCycle * freq;
 }
@@ -395,6 +379,7 @@ void Lfo::setExtClock(bool state) {
     _extClock = true;
   } else {
     _extClock = false;
+    //_midiTick = false; //para que deje de mandar midi clock por aca
   }
   Serial.println(_extClock);
 }
@@ -464,6 +449,7 @@ void Lfo::triggerReset() {
     _phaseAccMaster = 0;
     _triggerCounterClockOut = 0;  // esto es importante para que no se olvide ningun pulso *1
     digitalWrite(_clockOutPin, _clockOn);
+    _midiTick = true;
 
     _clockOutValue = 1;
     _ppqnCount = 0;
@@ -492,7 +478,7 @@ void Lfo::resetPhase(uint8_t lfoNum) {
   _flagTrigger[lfoNum] = true;  // con esto no le pifia a ningun syncout *1
   _triggerCounter[lfoNum] = 0;
   digitalWrite(_syncPins[lfoNum], _triggerOn[lfoNum]);
-
+  
   _masterTicks = 0;
   _phaseAcc[lfoNum] = 0;
   _phaseAcc12b[lfoNum] = 0;
@@ -523,10 +509,12 @@ void Lfo::disableSync(uint8_t lfoNum) {
 void Lfo::enableMidi(uint8_t lfoNum) {
   _midiEnabled[lfoNum] = true;
   _midiClock = true;
+  
 }
 void Lfo::disableMidi(uint8_t lfoNum) {
   _midiEnabled[lfoNum] = false;
   _midiClock = false;
+  //_midiTick = false;
 }
 void Lfo::turnFreeRunning(uint8_t lfoNum, bool toggle) {
   if (lfoNum < 2) {

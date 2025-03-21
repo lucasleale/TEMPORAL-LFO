@@ -41,6 +41,7 @@
 #define SCREEN_ADDRESS 0x3C  // CHEQUEAR ADDRESS, PUEDE SER 0x3C o 0x3D
 
 #define MIDI_RX 9
+#define MIDI_TX 8
 #define COMPENSATION 1       // 0.9985   // DEJAR EN 1!!!!!
 #define LED_REFRESH 33       // 1000/33 30fps
 #define LED_BRIGHTNESS 0.05  // 0. a 1.
@@ -97,8 +98,8 @@ ResponsiveAnalogRead potMult2(POT2_PIN, true);
 Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 Adafruit_USBD_MIDI usb_midi;
-MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI);
-// MIDI_CREATE_INSTANCE(HardwareSerial, Serial2, MIDI); //esta es para din
+//MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI);
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial2, MIDI); //esta es para din
 ArduinoTapTempo tap;
 Bounce wave1 = Bounce();
 Bounce wave2 = Bounce();
@@ -127,6 +128,7 @@ float msToBpm(float period);
 float bpmToMs(float bpm);
 byte readEEPROM(byte address);
 void syncPulse();
+void sendMidiClock();
 float calculateMedian(float newReading);
 void sort(float* start, float* end);
 void setupMenuInit();
@@ -280,6 +282,7 @@ void onClock() {
     lfo.enableSync(1);
     lfo.enableMidi(1);
   }
+  MIDI.sendClock();
   // if(ratioLfo1 == 1){
   //   digitalWrite(SYNC1_OUT_PIN, HIGH); //thru
   //   counterDivTicksLfo1 = 0;
@@ -361,6 +364,7 @@ void onStart() {
   lfo.resetPhaseMaster();
   lfo.resetPhase(0);
   lfo.resetPhase(1);
+  MIDI.sendStart();
 }
 byte TAPS;
 bool LFO1_PULSE;
@@ -403,8 +407,9 @@ byte ppqn[3]{1, 2, 4};
 void setup() {
   Serial.begin(115200);
   Serial2.setRX(MIDI_RX);
-  Serial2.setTX(8);
+  Serial2.setTX(MIDI_TX);
   MIDI.begin();
+  MIDI.turnThruOff();
   MIDI.setHandleClock(onClock);
   MIDI.setHandleStart(onStart);
   EEPROM.begin(256);
@@ -639,6 +644,12 @@ void loop() {
   updateButtons();
   updateEncoder();
   tapTempo();
+
+  if(lfo.hasMidiClock()){
+    //Serial.println("midi");
+    MIDI.sendClock();
+  }
+  
   // updateLfoLeds();
   // updateTempoLed();
   // analogWrite(LFO1_PIN, lfo.getLfoValuesPWM(0));
@@ -956,10 +967,11 @@ void tapTempo() {
     tap.update(tapState);
 
     if (tapButton.fell() || tapExt.fell()) {
-      lfo.triggerReset();
-      lfo.resetPhase(0);  // esto comentado para sacar el reset
-      lfo.resetPhase(1);
-      lfo.resetPhaseMaster();
+      //if reset...
+      //lfo.triggerReset();
+      //lfo.resetPhase(0);  // esto comentado para sacar el reset
+      //lfo.resetPhase(1);
+      //lfo.resetPhaseMaster();
 
       // leds.setPixelColor(LED_CLOCK_IN, leds.Color(255 * LED_BRIGHTNESS, 0, 255 * LED_BRIGHTNESS));
       tapLed = 0;
