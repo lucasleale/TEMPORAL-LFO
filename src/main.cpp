@@ -47,10 +47,14 @@
 #define LED_BRIGHTNESS 0.05  // 0. a 1.
 #define LED_BRIGHTNESS_ENC 1
 #define LED_CLOCK_IN 5
-#define LED_LFO1 4
-#define LED_LFO2 1
-#define LED_ENCODER1 0
-#define LED_ENCODER2 2
+//#define LED_LFO1 4
+//#define LED_LFO2 1
+//#define LED_ENCODER1 0
+//#define LED_ENCODER2 2
+#define LED_LFO1 3
+#define LED_LFO2 2
+#define LED_ENCODER1 1
+#define LED_ENCODER2 0
 #define LED_PIN 16
 #define NUM_LEDS 6
 #define BUILTIN_LED 25
@@ -98,8 +102,8 @@ ResponsiveAnalogRead potMult2(POT2_PIN, true);
 Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 Adafruit_USBD_MIDI usb_midi;
-//MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI);
-MIDI_CREATE_INSTANCE(HardwareSerial, Serial2, MIDI); //esta es para din
+// MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, MIDI);
+MIDI_CREATE_INSTANCE(HardwareSerial, Serial2, MIDI);  // esta es para din
 ArduinoTapTempo tap;
 Bounce wave1 = Bounce();
 Bounce wave2 = Bounce();
@@ -282,7 +286,8 @@ void onClock() {
     lfo.enableSync(1);
     lfo.enableMidi(1);
   }
-  MIDI.sendClock();
+  // MIDI.sendClock();
+  MIDI.sendRealTime(midi::Clock);
   // if(ratioLfo1 == 1){
   //   digitalWrite(SYNC1_OUT_PIN, HIGH); //thru
   //   counterDivTicksLfo1 = 0;
@@ -313,15 +318,15 @@ void onClock() {
   }
   // lfo.triggerReset();
   if (pulseCounter % 24 == 0) {  // negra. El clock out es thru tanto en midi como clock ext.
-    lfo.clockOut(HIGH);          // la polaridad la seteamos en la clase
+    lfo.clockOut(HIGH);          // la polaridad la seteamos en la clase comentado 032025
     lfo.clockFromExt();
 
     // Serial.print(calculateMedian(pulsePeriodMsClock));
     // Serial.print("  ");
     // Serial.println(pulsePeriodMsLfo1);
     lfo.resetPhaseMaster();
-    
-    if (pulsePeriodMsClock > 0) { //para que no tire inf si no paso nada
+
+    if (pulsePeriodMsClock > 0) {  // para que no tire inf si no paso nada
       lfo.setPeriodMsClock(pulsePeriodMsClock);
       bpm = msToBpm(pulsePeriodMsClock);  // para que si se saca la sincro recuerde el bpm... MEJORAR EMPROLIJAR
       tap.setBPM(bpm);
@@ -364,7 +369,8 @@ void onStart() {
   lfo.resetPhaseMaster();
   lfo.resetPhase(0);
   lfo.resetPhase(1);
-  MIDI.sendStart();
+  // MIDI.sendStart();
+  MIDI.sendRealTime(midi::Start);
 }
 byte TAPS;
 bool LFO1_PULSE;
@@ -373,6 +379,7 @@ byte LFO1_RANGE;
 byte LFO2_RANGE;
 byte MASTER_PULSE;
 byte MASTER_PPQN;
+byte ENC_DIR;
 
 const byte TAPS_ADDR = 0;
 const byte LFO1_RANGE_ADDR = 1;
@@ -381,7 +388,8 @@ const byte LFO1_PULSE_ADDR = 3;
 const byte LFO2_PULSE_ADDR = 4;
 const byte MASTER_PULSE_ADDR = 5;
 const byte MASTER_PPQN_ADDR = 6;
-byte defaultValues[7] = {2, 1, 1, 1, 1, 1, 0};
+const byte ENC_DIR_ADDR = 7;
+byte defaultValues[8] = {2, 1, 1, 1, 1, 1, 0, 0};
 /*EEPROM STRUCTURE
 byte 0 = TAPS
 byte 1 = LFO1 RANGE
@@ -420,9 +428,11 @@ void setup() {
   LFO2_PULSE = readEEPROM(LFO2_PULSE_ADDR);
   MASTER_PULSE = readEEPROM(MASTER_PULSE_ADDR);
   MASTER_PPQN = readEEPROM(MASTER_PPQN_ADDR);
-
+  ENC_DIR = readEEPROM(ENC_DIR_ADDR);
   encoder.begin();
-  // encoder.flip();
+  if (ENC_DIR == 1) {
+    encoder.flip();
+  }
   analogWriteFreq(PWM_FREQ);
   analogWriteRange(PWM_RANGE);
   pinMode(BUILTIN_LED, OUTPUT);
@@ -548,9 +558,9 @@ void syncPulse() {
     // lfo.triggerReset();
     lfo.clockFromExt();
     lfo.resetPhaseMaster();
-    
+
     Serial.println(pulsePeriodMsClock);
-    if (pulsePeriodMsClock > 0) { //para que no tire inf si no paso nada
+    if (pulsePeriodMsClock > 0) {  // para que no tire inf si no paso nada
       lfo.setPeriodMsClock(pulsePeriodMsClock);
       bpm = msToBpm(pulsePeriodMsClock);
       tap.setBPM(bpm);
@@ -645,38 +655,14 @@ void loop() {
   updateEncoder();
   tapTempo();
 
-  if(lfo.hasMidiClock()){
-    //Serial.println("midi");
-    MIDI.sendClock();
+  if (lfo.hasMidiClock()) {
+    // Serial.println("midi");
+    // MIDI.sendClock();
+    MIDI.sendRealTime(midi::Clock);
   }
-  
-  // updateLfoLeds();
-  // updateTempoLed();
-  // analogWrite(LFO1_PIN, lfo.getLfoValuesPWM(0));
-  // analogWrite(LFO2_PIN, lfo.getLfoValuesPWM(1));
+
   clockInPullUp();
   if (gotNewPulse) {
-    // Serial.print(ratioLfo1);
-    // Serial.print("  ");
-    // Serial.println(60000. /(counterTicksPulse * SAMPLE_RATE_MS));
-    // Serial.print(counterTicksPulse);
-    // Serial.print("  ");
-
-    // Serial.println(60000. / (counterTicksPulse * SAMPLE_RATE_MS));
-    // noInterrupts();
-    // counterTicksLoop = counterTicksPulse;
-    // rp2040.fifo.push(counterTicksLoop);
-
-    // interrupts();
-    // Serial.println(counterTicksLoop);
-    if (counterTicksPulse < 400) {  //
-      // Serial.println("disconnected");
-      //  pulseConnected = false;
-      //  lfo.disableSync();
-      //  updateBpm();
-    }
-    // displayBpm(msToBpm(pulsePeriodMsLfo1));
-
     gotNewPulse = false;
   }
 
@@ -700,6 +686,8 @@ void loop() {
       lfo.setExtClock(true);
     } else {
       timeOutCounter = 0;
+      // delay(100);
+      lfo.clockOut(LOW);  // polaridad en clase, no me ta funcionando igual...
       lfo.setExtClock(false);
       if (!midiClockConnected) {  // que vuelva a resetear todo si no hay midi clock
         resetAll();
@@ -720,6 +708,7 @@ void loop() {
       lfo.enableMidi(1);
     } else {
       timeOutCounterMidi = 0;
+
       lfo.setExtClock(false);
       lfo.disableMidi(0);
       lfo.disableMidi(1);
@@ -729,17 +718,6 @@ void loop() {
     Serial.println(midiClockConnected);
     lastMidiClockConnected = midiClockConnected;
   }
-
-  // Serial.println(counterTimeOut);
-  // delay(100);
-  // Serial.println(counterTimeOut);
-  // encoder.reset();
-  // Serial.println(encoder.getCount() / 4);
-  // delay(10);
-  // rp2040.fifo.push(500);
-  // delay(30);
-
-  // delay(33);
 }
 
 void clockInPullUp() {
@@ -763,6 +741,7 @@ void clockInPullUp() {
     // Serial.println(timeOutCounter);
     if (timeOutCounter > TIME_OUT_CLOCK_IN) {
       // flagTimeOut = false;
+      // lfo.clockOut(LOW);
       pulseConnected = false;
       // resetAll();
     }
@@ -967,11 +946,11 @@ void tapTempo() {
     tap.update(tapState);
 
     if (tapButton.fell() || tapExt.fell()) {
-      //if reset...
-      //lfo.triggerReset();
-      //lfo.resetPhase(0);  // esto comentado para sacar el reset
-      //lfo.resetPhase(1);
-      //lfo.resetPhaseMaster();
+      // if reset...
+      lfo.triggerReset();
+      lfo.resetPhase(0);  // esto comentado para sacar el reset
+      lfo.resetPhase(1);
+      lfo.resetPhaseMaster();
 
       // leds.setPixelColor(LED_CLOCK_IN, leds.Color(255 * LED_BRIGHTNESS, 0, 255 * LED_BRIGHTNESS));
       tapLed = 0;
@@ -1199,9 +1178,10 @@ PageConfig pages[] = {
     {0, 1, "LFO 2", 0, 0, 90, 0, 45},
     {0, 1, "MASTER", 0, 0, 90, 0, 45},
     {0, 2, "MASTER", 0, 0, 90, 0, 45},
-};
+    {0, 1, "ENC", 0, 0, 90, 0, 45}};
 const char* lfoRanges[3]{"SLOW", "MID", "FAST"};
 const char* pulsePolarity[2]{"NEG", "POS"};
+const char* encoderDir[2]{"<<", ">>"};
 int ppqnValues[3]{1, 2, 4};
 const int totalPages = sizeof(pages) / sizeof(pages[0]);
 int currentPage = -1;  // Start with the first page
@@ -1223,6 +1203,8 @@ void setup1() {
   displayWave(0, ROW1_WAVE);
   displayWave(0, ROW2_WAVE);
   displayBpm(120.0);
+  // oled.setCursor(32, 32);
+  // oled.print("miditest");
   if (setupState && !bootState) {
     oled.setFont(&FreeSans7pt7b);
     oled.setTextSize(1);
@@ -1235,6 +1217,7 @@ void setup1() {
     pages[4].currentValue = LFO2_PULSE;
     pages[5].currentValue = MASTER_PULSE;
     pages[6].currentValue = MASTER_PPQN;
+    pages[7].currentValue = ENC_DIR;
     setupMenuInit();
     updatePage(1);
     updateValue(0);
@@ -1296,6 +1279,8 @@ void updateValue(int delta) {
     oled.print(pulsePolarity[pages[currentPage].currentValue]);
   } else if (currentPage == 6) {
     oled.print(ppqnValues[pages[currentPage].currentValue]);
+  } else if (currentPage == 7) {
+    oled.print(encoderDir[pages[currentPage].currentValue]);
   }
 
   /*if (currentPage != 0) {
@@ -1331,6 +1316,9 @@ void updatePage(bool nextPage) {
   } else if (currentPage == 6) {
     oled.setCursor(pages[currentPage].titleX, pages[currentPage].titleY + 15);
     oled.print("PPQN");
+  } else if (currentPage == 7) {
+    oled.setCursor(pages[currentPage].titleX, pages[currentPage].titleY + 15);
+    oled.print("DIR");
   }
   oled.display();
 }

@@ -70,7 +70,7 @@ void Lfo::update() {
       }
       if (_extClock == false) {
         _midiTick = true; //send midi clock
-        //Serial.println("miditick");
+        
         if (_masterTicks % (24 / _ppqn) == 0) {
           _triggerCounterClockOut = 0;
           _ppqnCount;  // para separar led de clock out ppqn sin hacer nada nuevo
@@ -165,26 +165,30 @@ void Lfo::update() {
       if(_midiClock == false){
       _midiTick = true; //el midi clock tambien va cuando esta en sync pero sin midi clock in (midi clock in es midi thru)
       }
-      if (_masterTicks % 24 == 0) {
-        _triggerCounterClockOut = 0;
-        if (_extClock == false) {
-          // digitalWrite(_clockOutPin, HIGH);
+      //if (_masterTicks % (24 / _ppqn) == 0) {
+          //_triggerCounterClockOut = 0;
+          //_ppqnCount;  // para separar led de clock out ppqn sin hacer nada nuevo
 
-          //_clockOutValue = 1;
-        }
-        _flagTriggerClockOut = true;
-      }
-    }
-    if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
-      if (_extClock == false) {
-        // digitalWrite(_clockOutPin, LOW);
+          //digitalWrite(_clockOutPin, _clockOn);  // new
+          //_ppqnCount++;
+          //if (_ppqnCount % _ppqn == 0) {
+            //_clockOutValueLed = 1;  // always POS
+          //}
 
-        //_clockOutValue = LOW;
-      }
-      _triggerCounterClockOut = 0;
-      _flagTriggerClockOut = false;
+          //_clockOutValue = _clockOn;
+
+          //_flagTriggerClockOut = true;
+        //}
     }
-    _triggerCounterClockOut++;
+    //if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
+        //digitalWrite(_clockOutPin, _clockOff);
+        //_clockOutValue = _clockOff;
+        //_clockOutValueLed = 0;  // always NEG
+        //_triggerCounterClockOut = 0;
+        //_flagTriggerClockOut = false;
+      //}
+      //_triggerCounterClockOut++;
+      
     // Serial.println("codigo clock from ext aca");
     /*if ((_triggerCounterClockOut > _triggerPeriodClockOut) && _flagTriggerClockOut) {
       digitalWrite(_clockOutPin, LOW);

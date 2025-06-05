@@ -27,7 +27,8 @@
         "vector": "cpp",
         "string_view": "cpp",
         "initializer_list": "cpp",
-        "ranges": "cpp"
+        "ranges": "cpp",
+        "bitset": "cpp"
     },
     "cmake.sourceDirectory": "/Users/lu/Proyectos y cursos/TEMPORAL LFO/TEMPORAL LFO/lib/Adafruit_BusIO"
 }
